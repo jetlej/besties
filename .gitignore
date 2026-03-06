@@ -1,0 +1,24 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserdata
+*.xcworkspace
+xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.moved-aside
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Build artifacts
+Besties.zip
+
+# IDE
+.vscode/
+.cursor/
+*.code-workspace
