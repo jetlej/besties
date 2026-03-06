@@ -7,8 +7,8 @@ Ever had a friend you used to talk to all the time, and then life happened? Best
 ## What it does
 
 - Reads your iMessage history (locally, nothing leaves your Mac)
-- Scores your dormant conversations based on how close you were
-- Shows you who you should probably text back ✨
+- **Reconnect** — scores your dormant conversations and shows you who you should probably text back ✨
+- **All Time** — see who your top people are, ranked by total messages sent 👯
 
 ## Run it
 
