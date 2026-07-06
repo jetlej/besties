@@ -20,6 +20,16 @@ enum PermissionChecker {
         return ok
     }
 
+    /// Full Disk Access only takes effect on the next launch, so quit and let
+    /// a detached shell reopen the app once we're gone.
+    static func relaunchApp() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 0.5; /usr/bin/open \"\(Bundle.main.bundlePath)\""]
+        try? task.run()
+        NSApp.terminate(nil)
+    }
+
     static func openSystemPreferences() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!
         NSWorkspace.shared.open(url)

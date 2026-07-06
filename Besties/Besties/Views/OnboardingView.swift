@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     let appState: AppState
+    @State private var checkFailed = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -37,9 +38,24 @@ struct OnboardingView: View {
 
             Button("I've enabled it — check again") {
                 appState.checkAccess()
+                checkFailed = !appState.hasFullDiskAccess
             }
             .buttonStyle(.bordered)
             .controlSize(.regular)
+
+            if checkFailed {
+                VStack(spacing: 8) {
+                    Text("Still can't read your messages. macOS applies Full Disk Access when the app restarts.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 360)
+                    Button("Relaunch Besties") {
+                        PermissionChecker.relaunchApp()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
 
             Spacer()
         }

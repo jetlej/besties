@@ -1,9 +1,12 @@
 import Foundation
 import SQLite3
+import Contacts
 
 final class ContactResolver {
     private var phoneLookup: [String: String] = [:]
     private var emailLookup: [String: String] = [:]
+    private var phoneToImage: [String: Data] = [:]
+    private var emailToImage: [String: Data] = [:]
     private var loaded = false
 
     func loadContacts() {
@@ -23,6 +26,61 @@ final class ContactResolver {
         for path in dbPaths {
             guard fm.fileExists(atPath: path) else { continue }
             loadFromDatabase(path: path)
+        }
+
+        loadContactImages()
+    }
+
+    /// Photos are keyed by handle (phone/email), not name, so two contacts
+    /// who share a display name each resolve to their own photo.
+    func imageData(forHandle handle: String) -> Data? {
+        let digits = handle.filter(\.isNumber)
+        if digits.count >= 7, let data = phoneToImage[String(digits.suffix(10))] {
+            return data
+        }
+        if let data = emailToImage[handle.lowercased()] {
+            return data
+        }
+        return nil
+    }
+
+    /// Thumbnails come from the Contacts framework, which prompts for
+    /// Contacts access the first time. Denied access just means no photos.
+    private func loadContactImages() {
+        let store = CNContactStore()
+        var granted = CNContactStore.authorizationStatus(for: .contacts) == .authorized
+
+        if CNContactStore.authorizationStatus(for: .contacts) == .notDetermined {
+            let semaphore = DispatchSemaphore(value: 0)
+            store.requestAccess(for: .contacts) { ok, _ in
+                granted = ok
+                semaphore.signal()
+            }
+            semaphore.wait()
+        }
+        guard granted else { return }
+
+        let keys = [
+            CNContactPhoneNumbersKey,
+            CNContactEmailAddressesKey,
+            CNContactThumbnailImageDataKey,
+        ] as [CNKeyDescriptor]
+        let request = CNContactFetchRequest(keysToFetch: keys)
+
+        try? store.enumerateContacts(with: request) { contact, _ in
+            guard let data = contact.thumbnailImageData else { return }
+            for phone in contact.phoneNumbers {
+                let digits = phone.value.stringValue.filter(\.isNumber)
+                if digits.count >= 7 {
+                    self.phoneToImage[String(digits.suffix(10))] = data
+                }
+            }
+            for email in contact.emailAddresses {
+                let address = (email.value as String).lowercased()
+                if !address.isEmpty {
+                    self.emailToImage[address] = data
+                }
+            }
         }
     }
 
