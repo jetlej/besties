@@ -27,6 +27,9 @@ struct Conversation: Identifiable {
     let id: Int64
     let handle: String
     var displayName: String?
+    /// Apple's `handle.person_centric_id` — links handles (phone/email, across
+    /// services) that Messages considers the same person. nil when unset.
+    var personID: String?
 
     let totalMessages: Int
     let sentMessages: Int

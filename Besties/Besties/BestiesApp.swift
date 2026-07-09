@@ -118,6 +118,29 @@ final class AppState {
         return data
     }
 
+    /// Fills in missing contact names by spreading a resolved name across every
+    /// handle that belongs to the same person. Apple's `person_centric_id` links
+    /// handles across services (a phone + an email); handles that share an id
+    /// string but only some are on the contact card are covered too. This is why
+    /// e.g. an Apple-ID email that isn't saved on the card still shows the
+    /// person's name and merges into their totals instead of standing alone.
+    private static func propagateNames(_ conversations: inout [Conversation]) {
+        var nameByPerson: [String: String] = [:]
+        var nameByHandle: [String: String] = [:]
+        for c in conversations {
+            guard let name = c.displayName else { continue }
+            if let pid = c.personID, nameByPerson[pid] == nil { nameByPerson[pid] = name }
+            if nameByHandle[c.handle] == nil { nameByHandle[c.handle] = name }
+        }
+        for i in conversations.indices where conversations[i].displayName == nil {
+            if let pid = conversations[i].personID, let name = nameByPerson[pid] {
+                conversations[i].displayName = name
+            } else if let name = nameByHandle[conversations[i].handle] {
+                conversations[i].displayName = name
+            }
+        }
+    }
+
     /// Every "yyyy-MM" key from the first month with messages through the current month.
     private static func monthRange(from firstKey: String?) -> [String] {
         let formatter = DateFormatter()
@@ -153,6 +176,7 @@ final class AppState {
                     for i in resolved.indices {
                         resolved[i].displayName = contactResolver.resolve(handle: resolved[i].handle)
                     }
+                    Self.propagateNames(&resolved)
                     return .success(resolved)
                 } catch {
                     return .failure(error)

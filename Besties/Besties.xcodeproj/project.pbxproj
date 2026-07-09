@@ -17,6 +17,8 @@
 		A10000010000000000000008 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000008 /* ContentView.swift */; };
 		A10000010000000000000009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000009 /* Assets.xcassets */; };
 		A10000010000000000000010 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000010000000000000010 /* libsqlite3.tbd */; };
+		A10000010000000000000012 /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000012 /* ChatMessage.swift */; };
+		A10000010000000000000013 /* ConversationReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000013 /* ConversationReaderView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +33,8 @@
 		A20000010000000000000009 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A20000010000000000000010 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		A20000010000000000000011 /* Besties.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Besties.entitlements; sourceTree = "<group>"; };
+		A20000010000000000000012 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
+		A20000010000000000000013 /* ConversationReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationReaderView.swift; sourceTree = "<group>"; };
 		A30000010000000000000001 /* Besties.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Besties.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -72,6 +76,7 @@
 			isa = PBXGroup;
 			children = (
 				A20000010000000000000002 /* Conversation.swift */,
+				A20000010000000000000012 /* ChatMessage.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -92,6 +97,7 @@
 			children = (
 				A20000010000000000000007 /* OnboardingView.swift */,
 				A20000010000000000000008 /* ContentView.swift */,
+				A20000010000000000000013 /* ConversationReaderView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -184,6 +190,8 @@
 				A10000010000000000000006 /* PermissionChecker.swift in Sources */,
 				A10000010000000000000007 /* OnboardingView.swift in Sources */,
 				A10000010000000000000008 /* ContentView.swift in Sources */,
+				A10000010000000000000012 /* ChatMessage.swift in Sources */,
+				A10000010000000000000013 /* ConversationReaderView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

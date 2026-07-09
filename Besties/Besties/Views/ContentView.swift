@@ -48,6 +48,7 @@ struct ContentView: View {
     @State private var selectedRange = TimeRange.sixMonths
     @State private var monthPosition: Double = 0
     @State private var showChart = true
+    @State private var readerTarget: ReaderTarget?
 
     private var filteredReconnect: [Conversation] {
         appState.reconnectConversations(maxDays: selectedRange.rawValue)
@@ -148,6 +149,32 @@ struct ContentView: View {
         .onChange(of: appState.timelineMonths) {
             monthPosition = Double(max(appState.timelineMonths.count - 1, 0))
         }
+        .sheet(item: $readerTarget) { target in
+            ConversationReaderView(target: target, appState: appState)
+                .frame(minWidth: 480, idealWidth: 560, minHeight: 560, idealHeight: 680)
+        }
+    }
+
+    /// Opens the person view. In Time Machine we land on the selected month;
+    /// elsewhere we land on their most recent message.
+    private func openReader(name: String, monthKey: String? = nil) {
+        let convos = appState.resolvedConversations.filter { $0.resolvedName == name }
+        guard !convos.isEmpty else { return }
+        let handle = convos.max(by: { $0.totalMessages < $1.totalMessages })?.handle ?? name
+        let first = convos.map(\.firstMessageDate).min() ?? .now
+        let last = convos.map(\.lastMessageDate).max() ?? .now
+        let anchor = monthKey.flatMap(Self.monthKeyParser.date(from:)) ?? last
+        readerTarget = ReaderTarget(
+            name: name,
+            handle: handle,
+            handleIDs: convos.map(\.id),
+            anchorDate: anchor,
+            firstDate: first,
+            lastDate: last,
+            totalMessages: convos.reduce(0) { $0 + $1.totalMessages },
+            sentMessages: convos.reduce(0) { $0 + $1.sentMessages },
+            receivedMessages: convos.reduce(0) { $0 + $1.receivedMessages }
+        )
     }
 
     private var currentMonthIndex: Int {
@@ -199,7 +226,7 @@ struct ContentView: View {
             .map { RaceEntry(name: $0.name, count: $0.count, avatar: appState.avatar(forHandle: $0.handle)) }
     }
 
-    private func leaderboardRows(_ entries: [(name: String, count: Int, handle: String)]) -> some View {
+    private func leaderboardRows(_ entries: [(name: String, count: Int, handle: String)], monthKey: String? = nil) -> some View {
         let maxCount = Double(max(entries.first?.count ?? 1, 1))
         return LazyVStack(spacing: 8) {
             ForEach(entries, id: \.name) { entry in
@@ -208,7 +235,8 @@ struct ContentView: View {
                     count: entry.count,
                     avatar: appState.avatar(forHandle: entry.handle),
                     fraction: Double(entry.count) / maxCount,
-                    onMessage: { openInMessages(handle: entry.handle) }
+                    onMessage: { openInMessages(handle: entry.handle) },
+                    onOpen: { openReader(name: entry.name, monthKey: monthKey) }
                 )
             }
         }
@@ -216,8 +244,8 @@ struct ContentView: View {
         .padding(.vertical, 8)
     }
 
-    private func leaderboardList(_ conversations: [Conversation]) -> some View {
-        ScrollView { leaderboardRows(mergedEntries(conversations)) }
+    private func leaderboardList(_ conversations: [Conversation], monthKey: String? = nil) -> some View {
+        ScrollView { leaderboardRows(mergedEntries(conversations), monthKey: monthKey) }
     }
 
     private var allTimeView: some View {
@@ -266,6 +294,8 @@ struct ContentView: View {
         Table(filteredReconnect) {
             TableColumn("Name") { convo in
                 Text(convo.resolvedName)
+                    .contentShape(Rectangle())
+                    .onTapGesture { openReader(name: convo.resolvedName) }
             }
             .width(min: 120)
 
@@ -337,7 +367,7 @@ struct ContentView: View {
             .padding(.bottom, 8)
 
             if showChart {
-                PodiumView(entries: monthTopFive)
+                PodiumView(entries: monthTopFive, onOpen: { openReader(name: $0.name, monthKey: selectedMonthKey) })
                     .animation(.spring(duration: 0.4), value: currentMonthIndex)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
@@ -348,7 +378,7 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                leaderboardList(monthConversations)
+                leaderboardList(monthConversations, monthKey: selectedMonthKey)
             }
         }
     }
@@ -530,6 +560,7 @@ private func personColor(for name: String) -> Color {
 
 struct PodiumView: View {
     let entries: [RaceEntry]
+    var onOpen: ((RaceEntry) -> Void)? = nil
 
     private static let sizes: [CGFloat] = [56, 48, 40, 34, 30]
 
@@ -562,6 +593,8 @@ struct PodiumView: View {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture { onOpen?(item.entry) }
             }
         }
     }
@@ -575,30 +608,35 @@ struct LeaderboardRow: View {
     let avatar: Data?
     let fraction: Double
     let onMessage: () -> Void
+    var onOpen: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 10) {
-            AvatarView(name: name, imageData: avatar, color: leaderboardColor, size: 28)
-            Text(name)
-                .font(.callout)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(width: 150, alignment: .leading)
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(leaderboardColor.opacity(0.12))
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(leaderboardColor)
-                        .frame(width: max(geo.size.width * CGFloat(fraction), 4))
+            HStack(spacing: 10) {
+                AvatarView(name: name, imageData: avatar, color: leaderboardColor, size: 28)
+                Text(name)
+                    .font(.callout)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: 150, alignment: .leading)
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(leaderboardColor.opacity(0.12))
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(leaderboardColor)
+                            .frame(width: max(geo.size.width * CGFloat(fraction), 4))
+                    }
                 }
+                .frame(height: 22)
+                Text("\(count)")
+                    .font(.callout)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 56, alignment: .trailing)
             }
-            .frame(height: 22)
-            Text("\(count)")
-                .font(.callout)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .trailing)
+            .contentShape(Rectangle())
+            .onTapGesture { onOpen?() }
             Button(action: onMessage) {
                 Image(systemName: "bubble.left.fill")
             }
