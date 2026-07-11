@@ -49,21 +49,91 @@ struct ContentView: View {
     @State private var monthPosition: Double = 0
     @State private var showChart = true
     @State private var readerTarget: ReaderTarget?
+    @State private var searchText = ""
+    @State private var headerWidth: CGFloat = 0
+    @State private var tabsWidth: CGFloat = 0
+
+    private static let searchFieldWidth: CGFloat = 220
+
+    /// Whether the centered tab picker leaves room for the search field on
+    /// the trailing side; when it doesn't, the tabs shift to the left edge.
+    private var tabsFitCentered: Bool {
+        headerWidth == 0 || (headerWidth - tabsWidth) / 2 >= Self.searchFieldWidth + 12
+    }
+
+    private var tabPicker: some View {
+        Picker("", selection: $selectedTab) {
+            ForEach(Tab.allCases, id: \.self) { tab in
+                Text(tab.rawValue).tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+        .fixedSize()
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tabsWidth = $0 }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search name or phone number", text: $searchText)
+                .textFieldStyle(.plain)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+    }
 
     private var filteredReconnect: [Conversation] {
-        appState.reconnectConversations(maxDays: selectedRange.rawValue)
+        appState.reconnectConversations(maxDays: selectedRange.rawValue).filter(matchesSearch)
+    }
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Matches by name or handle; digit-only comparison lets "555-1234"
+    /// find "+15551234".
+    private func matchesSearch(_ convo: Conversation) -> Bool {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return true }
+        if convo.resolvedName.localizedCaseInsensitiveContains(query) { return true }
+        if convo.handle.localizedCaseInsensitiveContains(query) { return true }
+        let queryDigits = query.filter(\.isNumber)
+        return !queryDigits.isEmpty && convo.handle.filter(\.isNumber).contains(queryDigits)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 8) {
-                Picker("", selection: $selectedTab) {
-                    ForEach(Tab.allCases, id: \.self) { tab in
-                        Text(tab.rawValue).tag(tab)
+                Group {
+                    if tabsFitCentered {
+                        ZStack {
+                            tabPicker
+                                .frame(maxWidth: .infinity, alignment: .center)
+                            searchField
+                                .frame(width: Self.searchFieldWidth)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                    } else {
+                        HStack(spacing: 12) {
+                            tabPicker
+                            Spacer(minLength: 0)
+                            searchField
+                                .frame(maxWidth: Self.searchFieldWidth)
+                        }
                     }
                 }
-                .pickerStyle(.segmented)
-                .fixedSize()
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { headerWidth = $0 }
 
                 switch selectedTab {
                 case .reconnect:
@@ -112,7 +182,7 @@ struct ContentView: View {
                     switch selectedTab {
                     case .reconnect:
                         if filteredReconnect.isEmpty {
-                            Text("No one to reconnect with right now.")
+                            Text(isSearching ? "No matches." : "No one to reconnect with right now.")
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
@@ -188,7 +258,7 @@ struct ContentView: View {
     }
 
     private var monthConversations: [Conversation] {
-        selectedMonthKey.flatMap { appState.monthlyConversations[$0] } ?? []
+        (selectedMonthKey.flatMap { appState.monthlyConversations[$0] } ?? []).filter(matchesSearch)
     }
 
     private var currentPeopleCount: Int {
@@ -229,8 +299,9 @@ struct ContentView: View {
     private func leaderboardRows(_ entries: [(name: String, count: Int, handle: String)], monthKey: String? = nil) -> some View {
         let maxCount = Double(max(entries.first?.count ?? 1, 1))
         return LazyVStack(spacing: 8) {
-            ForEach(entries, id: \.name) { entry in
+            ForEach(Array(entries.enumerated()), id: \.element.name) { index, entry in
                 LeaderboardRow(
+                    rank: index + 1,
                     name: entry.name,
                     count: entry.count,
                     avatar: appState.avatar(forHandle: entry.handle),
@@ -249,7 +320,7 @@ struct ContentView: View {
     }
 
     private var allTimeView: some View {
-        let entries = mergedEntries(appState.allConversations)
+        let entries = mergedEntries(appState.allConversations.filter(matchesSearch))
         return ScrollView {
             VStack(spacing: 16) {
                 AllTimeKPIView(appState: appState)
@@ -274,7 +345,13 @@ struct ContentView: View {
                     .padding(.horizontal, 16)
                 }
 
-                leaderboardRows(entries)
+                if entries.isEmpty && isSearching {
+                    Text("No matches.")
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 24)
+                } else {
+                    leaderboardRows(entries)
+                }
             }
         }
     }
@@ -374,7 +451,7 @@ struct ContentView: View {
             }
 
             if monthConversations.isEmpty {
-                Text("No conversations this month.")
+                Text(isSearching ? "No matches." : "No conversations this month.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -603,6 +680,7 @@ struct PodiumView: View {
 let leaderboardColor = Color.blue
 
 struct LeaderboardRow: View {
+    let rank: Int
     let name: String
     let count: Int
     let avatar: Data?
@@ -613,6 +691,11 @@ struct LeaderboardRow: View {
     var body: some View {
         HStack(spacing: 10) {
             HStack(spacing: 10) {
+                Text("\(rank)")
+                    .font(.callout.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, alignment: .trailing)
                 AvatarView(name: name, imageData: avatar, color: leaderboardColor, size: 28)
                 Text(name)
                     .font(.callout)
