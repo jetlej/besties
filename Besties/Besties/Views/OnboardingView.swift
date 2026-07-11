@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct OnboardingView: View {
-    let appState: AppState
+    @Bindable var appState: AppState
     @State private var checkFailed = false
 
     var body: some View {
@@ -29,6 +29,21 @@ struct OnboardingView: View {
             .font(.body)
             .padding()
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+
+            if appState.whatsAppInstalled {
+                Toggle(isOn: $appState.whatsAppEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Include WhatsApp messages")
+                        Text("Reads the WhatsApp desktop app's history on this Mac — covered by the same permission. You can change this later in Settings.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .frame(maxWidth: 360)
+            }
 
             Button("Open System Settings") {
                 PermissionChecker.openSystemPreferences()

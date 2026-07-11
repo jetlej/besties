@@ -6,12 +6,14 @@ final class ReaderModel {
     let target: ReaderTarget
     var messages: [ChatMessage] = []
     var peaks = RelationshipPeaks()
-    var scrollTo: Int64?
+    var scrollTo: String?
     var hasOlder = false
     var hasNewer = false
     var isReady = false
 
-    private var chatIDs: [Int64] = []
+    private var imChatIDs: [Int64] = []
+    private var waChatIDs: [Int64] = []
+    private var started = false
     private var loading = false
 
     private let pageSize = 100
@@ -24,42 +26,89 @@ final class ReaderModel {
 
     /// Resolve the person's 1:1 chats once, load peak stats, then land on the anchor.
     func start() async {
-        guard chatIDs.isEmpty else { return }
-        let handleIDs = target.handleIDs
-        chatIDs = await Task.detached {
+        guard !started else { return }
+        started = true
+        let handleIDs = target.imessageHandleIDs
+        imChatIDs = await Task.detached {
             (try? MessageStore().fetchChatIDs(handleIDs: handleIDs)) ?? []
         }.value
+        waChatIDs = target.whatsAppChatIDs
         isReady = true
-        let ids = chatIDs
+        let im = imChatIDs
+        let wa = waChatIDs
         peaks = await Task.detached {
-            (try? MessageStore().fetchRelationshipPeaks(chatIDs: ids)) ?? RelationshipPeaks()
+            var counts = (try? MessageStore().fetchDayCounts(chatIDs: im)) ?? [:]
+            for (day, c) in (try? WhatsAppStore().fetchDayCounts(chatIDs: wa)) ?? [:] {
+                counts[day, default: 0] += c
+            }
+            return RelationshipPeaks(dayCounts: counts)
         }.value
         await jump(to: target.anchorDate)
+    }
+
+    /// One merged page across both stores, ascending. Each source pages from
+    /// its own keyset cursor; the merged result is trimmed to `limit` on the
+    /// fetch-direction side, and `more` reports whether messages remain beyond
+    /// the trim (a full page from either source, or trimmed overflow).
+    nonisolated private static func fetchMerged(
+        im: [Int64], wa: [Int64],
+        imCursor: (date: Int64, id: Int64), waCursor: (date: Int64, id: Int64),
+        older: Bool, limit: Int
+    ) -> (page: [ChatMessage], more: Bool) {
+        let imPage = older
+            ? ((try? MessageStore().fetchMessages(chatIDs: im, before: imCursor, limit: limit)) ?? [])
+            : ((try? MessageStore().fetchMessages(chatIDs: im, after: imCursor, limit: limit)) ?? [])
+        let waPage = older
+            ? ((try? WhatsAppStore().fetchMessages(chatIDs: wa, before: waCursor, limit: limit)) ?? [])
+            : ((try? WhatsAppStore().fetchMessages(chatIDs: wa, after: waCursor, limit: limit)) ?? [])
+
+        var merged = (imPage + waPage).sorted {
+            ($0.dateNano, $0.source.rawValue, $0.rowID) < ($1.dateNano, $1.source.rawValue, $1.rowID)
+        }
+        let more = imPage.count == limit || waPage.count == limit || merged.count > limit
+        if merged.count > limit {
+            // Keep the side nearest the window; the dropped remainder is
+            // re-fetched by the next page (cursors derive from kept messages).
+            merged = older ? Array(merged.suffix(limit)) : Array(merged.prefix(limit))
+        }
+        return (merged, more)
+    }
+
+    /// A source's keyset cursor at the window edge: its outermost message in
+    /// the window, or — when the window holds none of its messages — the
+    /// window edge itself, exclusive.
+    private func edgeCursor(older: Bool, source: MessageSource) -> (date: Int64, id: Int64) {
+        if older {
+            if let m = messages.first(where: { $0.source == source }) { return (m.dateNano, m.rowID) }
+            return (messages.first?.dateNano ?? 0, Int64.min)
+        }
+        if let m = messages.last(where: { $0.source == source }) { return (m.dateNano, m.rowID) }
+        return (messages.last?.dateNano ?? 0, Int64.max)
     }
 
     /// Replace the window with context around `date`: a little history above,
     /// a page of messages at/after the anchor below.
     func jump(to date: Date) async {
-        guard !chatIDs.isEmpty, !loading else { return }
+        guard imChatIDs.isEmpty == false || waChatIDs.isEmpty == false, !loading else { return }
         loading = true
         defer { loading = false }
 
         let anchor = MessageStore.nanoseconds(from: date)
-        let ids = chatIDs
+        let im = imChatIDs
+        let wa = waChatIDs
         let before = contextBefore
         let after = pageSize
-        let result = await Task.detached { () -> (older: [ChatMessage], newer: [ChatMessage]) in
-            let store = MessageStore()
+        let result = await Task.detached { () -> (older: (page: [ChatMessage], more: Bool), newer: (page: [ChatMessage], more: Bool)) in
             // (anchor, Int64.min) splits cleanly: older is strictly < anchor, newer is >= anchor.
-            let older = (try? store.fetchMessages(chatIDs: ids, before: (anchor, Int64.min), limit: before)) ?? []
-            let newer = (try? store.fetchMessages(chatIDs: ids, after: (anchor, Int64.min), limit: after)) ?? []
+            let older = Self.fetchMerged(im: im, wa: wa, imCursor: (anchor, Int64.min), waCursor: (anchor, Int64.min), older: true, limit: before)
+            let newer = Self.fetchMerged(im: im, wa: wa, imCursor: (anchor, Int64.min), waCursor: (anchor, Int64.min), older: false, limit: after)
             return (older, newer)
         }.value
 
-        messages = result.older + result.newer
-        hasOlder = result.older.count == before
-        hasNewer = result.newer.count == after
-        scrollTo = result.newer.first?.id ?? result.older.last?.id
+        messages = result.older.page + result.newer.page
+        hasOlder = result.older.more
+        hasNewer = result.newer.more
+        scrollTo = result.newer.page.first?.id ?? result.older.page.last?.id
     }
 
     func loadOlder() async {
@@ -67,16 +116,18 @@ final class ReaderModel {
         loading = true
         defer { loading = false }
 
-        let cursor = (first.dateNano, first.id)
-        let ids = chatIDs
+        let im = imChatIDs
+        let wa = waChatIDs
+        let imCursor = edgeCursor(older: true, source: .iMessage)
+        let waCursor = edgeCursor(older: true, source: .whatsApp)
         let size = pageSize
-        let page = await Task.detached {
-            (try? MessageStore().fetchMessages(chatIDs: ids, before: cursor, limit: size)) ?? []
+        let result = await Task.detached {
+            Self.fetchMerged(im: im, wa: wa, imCursor: imCursor, waCursor: waCursor, older: true, limit: size)
         }.value
 
-        guard !page.isEmpty else { hasOlder = false; return }
-        messages.insert(contentsOf: page, at: 0)
-        hasOlder = page.count == size
+        guard !result.page.isEmpty else { hasOlder = false; return }
+        messages.insert(contentsOf: result.page, at: 0)
+        hasOlder = result.more
         if messages.count > windowCap {
             messages.removeLast(messages.count - windowCap)
             hasNewer = true
@@ -89,16 +140,18 @@ final class ReaderModel {
         loading = true
         defer { loading = false }
 
-        let cursor = (last.dateNano, last.id)
-        let ids = chatIDs
+        let im = imChatIDs
+        let wa = waChatIDs
+        let imCursor = edgeCursor(older: false, source: .iMessage)
+        let waCursor = edgeCursor(older: false, source: .whatsApp)
         let size = pageSize
-        let page = await Task.detached {
-            (try? MessageStore().fetchMessages(chatIDs: ids, after: cursor, limit: size)) ?? []
+        let result = await Task.detached {
+            Self.fetchMerged(im: im, wa: wa, imCursor: imCursor, waCursor: waCursor, older: false, limit: size)
         }.value
 
-        guard !page.isEmpty else { hasNewer = false; return }
-        messages.append(contentsOf: page)
-        hasNewer = page.count == size
+        guard !result.page.isEmpty else { hasNewer = false; return }
+        messages.append(contentsOf: result.page)
+        hasNewer = result.more
         if messages.count > windowCap {
             messages.removeFirst(messages.count - windowCap)
             hasOlder = true

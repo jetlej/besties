@@ -80,7 +80,8 @@ final class MessageStore {
             let lastDate = Self.dateFromCoreData(nanoseconds: lastNano)
 
             conversations.append(Conversation(
-                id: handleId,
+                rowID: handleId,
+                source: .iMessage,
                 handle: handle,
                 personID: personID,
                 totalMessages: total,
@@ -155,7 +156,8 @@ final class MessageStore {
             let lastNano = sqlite3_column_int64(stmt, 7)
 
             byMonth[month, default: []].append(Conversation(
-                id: handleId,
+                rowID: handleId,
+                source: .iMessage,
                 handle: handle,
                 totalMessages: total,
                 sentMessages: sent,
@@ -304,7 +306,8 @@ final class MessageStore {
             let hasAttachment = sqlite3_column_int(stmt, 5) == 1
 
             messages.append(ChatMessage(
-                id: rowid,
+                rowID: rowid,
+                source: .iMessage,
                 dateNano: dateNano,
                 date: Self.dateFromCoreData(nanoseconds: dateNano),
                 isFromMe: fromMe,
@@ -330,11 +333,11 @@ final class MessageStore {
         return s
     }
 
-    /// Busiest day / month / year for a set of chats. Counts every row (matching
-    /// the totals shown elsewhere); rolled up from per-day counts in Swift, which
-    /// is cheap since a decade of messages is at most a few thousand days.
-    func fetchRelationshipPeaks(chatIDs: [Int64]) throws -> RelationshipPeaks {
-        guard !chatIDs.isEmpty else { return RelationshipPeaks() }
+    /// Per-day message counts ("yyyy-MM-dd") for a set of chats. Counts every
+    /// row (matching the totals shown elsewhere). Merged with WhatsApp day
+    /// counts before RelationshipPeaks rolls them up.
+    func fetchDayCounts(chatIDs: [Int64]) throws -> [String: Int] {
+        guard !chatIDs.isEmpty else { return [:] }
         var db: OpaquePointer?
         guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
             let msg = db.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "Unknown error"
@@ -361,39 +364,13 @@ final class MessageStore {
             sqlite3_bind_int64(stmt, Int32(i + 1), id)
         }
 
-        var dayCounts: [(day: String, count: Int)] = []
-        var byMonth: [String: Int] = [:]
-        var byYear: [Int: Int] = [:]
+        var dayCounts: [String: Int] = [:]
         while sqlite3_step(stmt) == SQLITE_ROW {
             guard let dayC = sqlite3_column_text(stmt, 0) else { continue }
-            let day = String(cString: dayC)
-            let count = Int(sqlite3_column_int(stmt, 1))
-            dayCounts.append((day, count))
-            byMonth[String(day.prefix(7)), default: 0] += count
-            if let year = Int(day.prefix(4)) { byYear[year, default: 0] += count }
+            dayCounts[String(cString: dayC)] = Int(sqlite3_column_int(stmt, 1))
         }
-
-        var peaks = RelationshipPeaks()
-        if let top = dayCounts.max(by: { $0.count < $1.count }),
-           let date = Self.dayFormatter.date(from: top.day) {
-            peaks.busiestDay = (date, top.count)
-        }
-        if let top = byMonth.max(by: { $0.value < $1.value }),
-           let date = Self.monthFormatter.date(from: top.key) {
-            peaks.busiestMonth = (date, top.value)
-        }
-        if let top = byYear.max(by: { $0.value < $1.value }) {
-            peaks.busiestYear = (top.key, top.value)
-        }
-        return peaks
+        return dayCounts
     }
-
-    private static let dayFormatter: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f
-    }()
-    private static let monthFormatter: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM"; return f
-    }()
 
     /// Nanoseconds since 2001-01-01 for a Date — the inverse of `dateFromCoreData`.
     static func nanoseconds(from date: Date) -> Int64 {

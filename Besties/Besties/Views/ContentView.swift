@@ -55,10 +55,18 @@ struct ContentView: View {
 
     private static let searchFieldWidth: CGFloat = 220
 
-    /// Whether the centered tab picker leaves room for the search field on
-    /// the trailing side; when it doesn't, the tabs shift to the left edge.
+    /// Whether the centered tab picker leaves room for the search field and
+    /// gear on the trailing side; when it doesn't, the tabs shift to the left edge.
     private var tabsFitCentered: Bool {
-        headerWidth == 0 || (headerWidth - tabsWidth) / 2 >= Self.searchFieldWidth + 12
+        headerWidth == 0 || (headerWidth - tabsWidth) / 2 >= Self.searchFieldWidth + 44
+    }
+
+    private var settingsButton: some View {
+        SettingsLink {
+            Image(systemName: "gearshape")
+        }
+        .buttonStyle(.borderless)
+        .help("Settings")
     }
 
     private var tabPicker: some View {
@@ -120,9 +128,12 @@ struct ContentView: View {
                         ZStack {
                             tabPicker
                                 .frame(maxWidth: .infinity, alignment: .center)
-                            searchField
-                                .frame(width: Self.searchFieldWidth)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
+                            HStack(spacing: 8) {
+                                searchField
+                                    .frame(width: Self.searchFieldWidth)
+                                settingsButton
+                            }
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                         }
                     } else {
                         HStack(spacing: 12) {
@@ -130,6 +141,7 @@ struct ContentView: View {
                             Spacer(minLength: 0)
                             searchField
                                 .frame(maxWidth: Self.searchFieldWidth)
+                            settingsButton
                         }
                     }
                 }
@@ -227,17 +239,18 @@ struct ContentView: View {
 
     /// Opens the person view. In Time Machine we land on the selected month;
     /// elsewhere we land on their most recent message.
-    private func openReader(name: String, monthKey: String? = nil) {
-        let convos = appState.resolvedConversations.filter { $0.resolvedName == name }
-        guard !convos.isEmpty else { return }
-        let handle = convos.max(by: { $0.totalMessages < $1.totalMessages })?.handle ?? name
+    private func openReader(key: String, monthKey: String? = nil) {
+        let convos = appState.resolvedConversations.filter { $0.mergeKey == key }
+        guard let busiest = convos.max(by: { $0.totalMessages < $1.totalMessages }) else { return }
         let first = convos.map(\.firstMessageDate).min() ?? .now
         let last = convos.map(\.lastMessageDate).max() ?? .now
         let anchor = monthKey.flatMap(Self.monthKeyParser.date(from:)) ?? last
         readerTarget = ReaderTarget(
-            name: name,
-            handle: handle,
-            handleIDs: convos.map(\.id),
+            key: key,
+            name: busiest.resolvedName,
+            handle: busiest.handle,
+            imessageHandleIDs: convos.filter { $0.source == .iMessage }.map(\.rowID),
+            whatsAppChatIDs: convos.filter { $0.source == .whatsApp }.map(\.rowID),
             anchorDate: anchor,
             firstDate: first,
             lastDate: last,
@@ -271,43 +284,46 @@ struct ContentView: View {
             ? appState.sentPerMonth[currentMonthIndex] : 0
     }
 
-    /// Groups conversations by resolved name (merging a person's iMessage + SMS
-    /// handles), sorted by message count descending. Each entry keeps the handle
-    /// of its busiest conversation for the avatar and Messages button.
-    private func mergedEntries(_ conversations: [Conversation]) -> [(name: String, count: Int, handle: String)] {
-        var merged: [String: (count: Int, handle: String, topCount: Int)] = [:]
+    /// Groups conversations by person (merging iMessage + SMS + WhatsApp via
+    /// mergeKey), sorted by message count descending. Each entry keeps the
+    /// name, handle, and source of its busiest conversation for the label,
+    /// avatar, and message button.
+    private func mergedEntries(_ conversations: [Conversation]) -> [(key: String, name: String, count: Int, handle: String, source: MessageSource)] {
+        var merged: [String: (name: String, count: Int, handle: String, source: MessageSource, topCount: Int)] = [:]
         for convo in conversations {
-            var agg = merged[convo.resolvedName] ?? (0, convo.handle, -1)
+            var agg = merged[convo.mergeKey] ?? (convo.resolvedName, 0, convo.handle, convo.source, -1)
             agg.count += convo.totalMessages
             if convo.totalMessages > agg.topCount {
                 agg.topCount = convo.totalMessages
+                agg.name = convo.resolvedName
                 agg.handle = convo.handle
+                agg.source = convo.source
             }
-            merged[convo.resolvedName] = agg
+            merged[convo.mergeKey] = agg
         }
         return merged
-            .sorted { $0.value.count != $1.value.count ? $0.value.count > $1.value.count : $0.key < $1.key }
-            .map { (name: $0.key, count: $0.value.count, handle: $0.value.handle) }
+            .sorted { $0.value.count != $1.value.count ? $0.value.count > $1.value.count : $0.value.name < $1.value.name }
+            .map { (key: $0.key, name: $0.value.name, count: $0.value.count, handle: $0.value.handle, source: $0.value.source) }
     }
 
     private var monthTopFive: [RaceEntry] {
         mergedEntries(monthConversations)
             .prefix(5)
-            .map { RaceEntry(name: $0.name, count: $0.count, avatar: appState.avatar(forHandle: $0.handle)) }
+            .map { RaceEntry(key: $0.key, name: $0.name, count: $0.count, avatar: appState.avatar(forHandle: $0.handle)) }
     }
 
-    private func leaderboardRows(_ entries: [(name: String, count: Int, handle: String)], monthKey: String? = nil) -> some View {
+    private func leaderboardRows(_ entries: [(key: String, name: String, count: Int, handle: String, source: MessageSource)], monthKey: String? = nil) -> some View {
         let maxCount = Double(max(entries.first?.count ?? 1, 1))
         return LazyVStack(spacing: 8) {
-            ForEach(Array(entries.enumerated()), id: \.element.name) { index, entry in
+            ForEach(Array(entries.enumerated()), id: \.element.key) { index, entry in
                 LeaderboardRow(
                     rank: index + 1,
                     name: entry.name,
                     count: entry.count,
                     avatar: appState.avatar(forHandle: entry.handle),
                     fraction: Double(entry.count) / maxCount,
-                    onMessage: { openInMessages(handle: entry.handle) },
-                    onOpen: { openReader(name: entry.name, monthKey: monthKey) }
+                    onMessage: { openInMessages(handle: entry.handle, source: entry.source) },
+                    onOpen: { openReader(key: entry.key, monthKey: monthKey) }
                 )
             }
         }
@@ -372,7 +388,7 @@ struct ContentView: View {
             TableColumn("Name") { convo in
                 Text(convo.resolvedName)
                     .contentShape(Rectangle())
-                    .onTapGesture { openReader(name: convo.resolvedName) }
+                    .onTapGesture { openReader(key: convo.mergeKey) }
             }
             .width(min: 120)
 
@@ -395,7 +411,7 @@ struct ContentView: View {
 
             TableColumn("") { convo in
                 Button {
-                    openInMessages(handle: convo.handle)
+                    openInMessages(handle: convo.handle, source: convo.source)
                 } label: {
                     Image(systemName: "bubble.left.fill")
                 }
@@ -444,7 +460,7 @@ struct ContentView: View {
             .padding(.bottom, 8)
 
             if showChart {
-                PodiumView(entries: monthTopFive, onOpen: { openReader(name: $0.name, monthKey: selectedMonthKey) })
+                PodiumView(entries: monthTopFive, onOpen: { openReader(key: $0.key, monthKey: selectedMonthKey) })
                     .animation(.spring(duration: 0.4), value: currentMonthIndex)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
@@ -460,7 +476,13 @@ struct ContentView: View {
         }
     }
 
-    private func openInMessages(handle: String) {
+    private func openInMessages(handle: String, source: MessageSource) {
+        if source == .whatsApp {
+            if let url = URL(string: "whatsapp://send?phone=\(handle.filter(\.isNumber))") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
         let cleaned = handle.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? handle
         if let url = URL(string: "imessage://\(cleaned)") {
             NSWorkspace.shared.open(url)
@@ -509,10 +531,10 @@ struct AllTimeKPIView: View {
         // Merge each person's handles into combined sent/received totals.
         var byPerson: [String: (sent: Int, received: Int)] = [:]
         for c in convos {
-            var e = byPerson[c.resolvedName] ?? (0, 0)
+            var e = byPerson[c.mergeKey] ?? (0, 0)
             e.sent += c.sentMessages
             e.received += c.receivedMessages
-            byPerson[c.resolvedName] = e
+            byPerson[c.mergeKey] = e
         }
         let people = byPerson.count
         let avg = people > 0 ? total / people : 0
@@ -622,7 +644,8 @@ struct TrendChartView: View {
 }
 
 struct RaceEntry: Identifiable {
-    var id: String { name }
+    var id: String { key }
+    let key: String
     let name: String
     let count: Int
     let avatar: Data?

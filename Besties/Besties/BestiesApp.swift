@@ -29,12 +29,35 @@ struct BestiesApp: App {
             }
         }
         .defaultSize(width: 600, height: 500)
+
+        Settings {
+            SettingsView(appState: appState)
+        }
     }
 }
 
 @Observable
 final class AppState {
+    private static let whatsAppEnabledKey = "whatsAppEnabled"
+
     var hasFullDiskAccess = false
+
+    /// Whether WhatsApp history is folded in. Persisted; flipping it reloads
+    /// everything from scratch.
+    var whatsAppEnabled: Bool = UserDefaults.standard.object(forKey: whatsAppEnabledKey) as? Bool ?? true {
+        didSet {
+            guard oldValue != whatsAppEnabled else { return }
+            UserDefaults.standard.set(whatsAppEnabled, forKey: Self.whatsAppEnabledKey)
+            guard hasFullDiskAccess else { return }
+            monthlyConversations = [:]
+            timelineMonths = []
+            peoplePerMonth = []
+            sentPerMonth = []
+            loadConversations()
+        }
+    }
+
+    var whatsAppInstalled: Bool { whatsAppStore.isInstalled }
     var allConversations: [Conversation] = []
     var resolvedConversations: [Conversation] = []
     var timelineMonths: [String] = []
@@ -48,13 +71,42 @@ final class AppState {
     var error: String?
 
     private let messageStore = MessageStore()
+    private let whatsAppStore = WhatsAppStore()
     private let analyzer = ConversationAnalyzer()
     private let contactResolver = ContactResolver()
 
     func reconnectConversations(maxDays: Int) -> [Conversation] {
         var a = analyzer
         a.maximumDormantDays = maxDays
-        return a.score(resolvedConversations)
+        return a.score(Self.mergedByPerson(resolvedConversations))
+    }
+
+    /// Collapses a person's conversations (iMessage + SMS + WhatsApp) into one
+    /// combined row, so dormancy reflects the last contact on *any* platform
+    /// and nobody shows up twice in Reconnect. The busiest conversation keeps
+    /// the row's handle/source for the message button.
+    private static func mergedByPerson(_ conversations: [Conversation]) -> [Conversation] {
+        var groups: [String: [Conversation]] = [:]
+        for c in conversations { groups[c.mergeKey, default: []].append(c) }
+        return groups.values.map { group in
+            guard group.count > 1,
+                  let busiest = group.max(by: { $0.totalMessages < $1.totalMessages }),
+                  let latest = group.max(by: { $0.lastMessageDate < $1.lastMessageDate })
+            else { return group[0] }
+            return Conversation(
+                rowID: busiest.rowID,
+                source: busiest.source,
+                handle: busiest.handle,
+                displayName: busiest.displayName ?? group.compactMap(\.displayName).first,
+                personID: busiest.personID,
+                totalMessages: group.reduce(0) { $0 + $1.totalMessages },
+                sentMessages: group.reduce(0) { $0 + $1.sentMessages },
+                receivedMessages: group.reduce(0) { $0 + $1.receivedMessages },
+                firstMessageDate: group.map(\.firstMessageDate).min() ?? busiest.firstMessageDate,
+                lastMessageDate: latest.lastMessageDate,
+                lastMessageIsFromMe: latest.lastMessageIsFromMe
+            )
+        }
     }
 
     func loadTimeline() {
@@ -66,10 +118,16 @@ final class AppState {
             uniquingKeysWith: { first, _ in first }
         )
 
-        Task { [messageStore] in
+        let includeWhatsApp = whatsAppEnabled
+        Task { [messageStore, whatsAppStore] in
             let result: Result<([String: [Conversation]], [String], [Int], [Int], GlobalStats), Error> = await Task.detached {
                 do {
                     var byMonth = try messageStore.fetchConversationsByMonth()
+                    if includeWhatsApp {
+                        for (month, convos) in (try? whatsAppStore.fetchConversationsByMonth()) ?? [:] {
+                            byMonth[month, default: []] += convos
+                        }
+                    }
                     for (month, convos) in byMonth {
                         var resolved = convos
                         for i in resolved.indices {
@@ -81,16 +139,19 @@ final class AppState {
                     var people: [Int] = []
                     var sent: [Int] = []
                     for month in months {
-                        var names = Set<String>()
+                        var keys = Set<String>()
                         var sentCount = 0
                         for convo in byMonth[month] ?? [] {
-                            names.insert(convo.resolvedName)
+                            keys.insert(convo.mergeKey)
                             sentCount += convo.sentMessages
                         }
-                        people.append(names.count)
+                        people.append(keys.count)
                         sent.append(sentCount)
                     }
-                    let stats = (try? messageStore.fetchGlobalStats()) ?? GlobalStats()
+                    var stats = (try? messageStore.fetchGlobalStats()) ?? GlobalStats()
+                    if includeWhatsApp, let waHours = try? whatsAppStore.fetchSentHourCounts() {
+                        stats.sentHourCounts = zip(stats.sentHourCounts, waHours).map(+)
+                    }
                     return .success((byMonth, months, people, sent, stats))
                 } catch {
                     return .failure(error)
@@ -127,16 +188,30 @@ final class AppState {
     private static func propagateNames(_ conversations: inout [Conversation]) {
         var nameByPerson: [String: String] = [:]
         var nameByHandle: [String: String] = [:]
+        var nameByDigits: [String: String] = [:]
         for c in conversations {
             guard let name = c.displayName else { continue }
             if let pid = c.personID, nameByPerson[pid] == nil { nameByPerson[pid] = name }
             if nameByHandle[c.handle] == nil { nameByHandle[c.handle] = name }
+            // Digit key spreads a name across sources even when the handle
+            // formatting differs (e.g. a WhatsApp partner name onto the same
+            // number's unsaved iMessage handle).
+            let digits = c.handle.filter(\.isNumber)
+            if digits.count >= 7 {
+                let key = String(digits.suffix(10))
+                if nameByDigits[key] == nil { nameByDigits[key] = name }
+            }
         }
         for i in conversations.indices where conversations[i].displayName == nil {
             if let pid = conversations[i].personID, let name = nameByPerson[pid] {
                 conversations[i].displayName = name
             } else if let name = nameByHandle[conversations[i].handle] {
                 conversations[i].displayName = name
+            } else {
+                let digits = conversations[i].handle.filter(\.isNumber)
+                if digits.count >= 7, let name = nameByDigits[String(digits.suffix(10))] {
+                    conversations[i].displayName = name
+                }
             }
         }
     }
@@ -167,14 +242,20 @@ final class AppState {
         isLoading = true
         error = nil
 
-        Task { [messageStore, contactResolver] in
+        let includeWhatsApp = whatsAppEnabled
+        Task { [messageStore, whatsAppStore, contactResolver] in
             let result: Result<[Conversation], Error> = await Task.detached {
                 contactResolver.loadContacts()
                 do {
                     let raw = try messageStore.fetchConversations()
+                        + (includeWhatsApp ? ((try? whatsAppStore.fetchConversations()) ?? []) : [])
                     var resolved = raw
                     for i in resolved.indices {
-                        resolved[i].displayName = contactResolver.resolve(handle: resolved[i].handle)
+                        // Keep WhatsApp's partner-name fallback when the number
+                        // isn't on a contact card here.
+                        if let name = contactResolver.resolve(handle: resolved[i].handle) {
+                            resolved[i].displayName = name
+                        }
                     }
                     Self.propagateNames(&resolved)
                     return .success(resolved)
