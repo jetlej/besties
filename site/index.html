@@ -965,19 +965,37 @@
     zoe:  ["ph-zoe","Z","Zoe"],     marcus:["ph-marcus","M","Marcus"], priya:["ph-priya","P","Priya"],
     ben:  ["ph-ben","B","Ben"],     tara:  ["ph-tara","T","Tara"],
   };
-  // f = apply this state once the scrub position drops below it (1 → past).
-  // The cast churns as you travel back: only Mia and family persist — the
-  // 2021 circle is a genuinely different crowd than today's.
-  const TM_STATES = [
-    { f: 2.00, sub: "38 people · 3,904 messages sent",
-      lb: [[P.mia,1204],[P.sam,987],[P.mom,812],[P.riley,458],[P.ava,291],[P.dad,246],[P.jo,198],[P.nana,154]] },
-    { f: 0.87, sub: "35 people · 3,512 messages sent",
-      lb: [[P.mia,1476],[P.mom,1031],[P.sam,918],[P.jo,507],[P.alex,462],[P.riley,315],[P.ava,288],[P.dad,201]] },
-    { f: 0.76, sub: "31 people · 3,140 messages sent",
-      lb: [[P.mia,1688],[P.sam,1105],[P.zoe,934],[P.mom,787],[P.marcus,611],[P.riley,402],[P.priya,344],[P.jo,251]] },
-    { f: 0.655, sub: "24 people · 2,731 messages sent",
-      lb: [[P.mia,1842],[P.zoe,1266],[P.marcus,1054],[P.sam,903],[P.priya,645],[P.ben,512],[P.mom,388],[P.tara,306]] },
-  ];
+  // Message counts per person at six anchor points from Now back to June 2021.
+  // Counts are interpolated continuously along the scrub and re-ranked at every
+  // sample, so the leaderboard churns constantly — people surge, sink, appear,
+  // and vanish as you travel back. Only Mia holds #1 at the far end.
+  const ANCHORS = {
+    mia:    [1204, 1310, 1476, 1620, 1688, 1842],
+    sam:    [987,  940,  918,  1010, 1105, 903],
+    mom:    [812,  900,  1031, 860,  787,  388],
+    riley:  [458,  520,  315,  350,  402,  120],
+    ava:    [291,  350,  288,  210,  150,  90],
+    dad:    [246,  230,  201,  190,  170,  140],
+    jo:     [198,  320,  507,  420,  251,  100],
+    nana:   [154,  140,  130,  250,  300,  280],
+    alex:   [90,   200,  462,  380,  240,  110],
+    zoe:    [40,   60,   120,  400,  934,  1266],
+    marcus: [30,   50,   90,   300,  611,  1054],
+    priya:  [20,   40,   80,   220,  344,  645],
+    ben:    [10,   30,   60,   150,  280,  512],
+    tara:   [10,   20,   50,   120,  200,  306],
+  };
+  // t: 0 = Now … 1 = June 2021. Returns the ranked top-8 at that moment.
+  function lineupAt(t) {
+    const seg = Math.min(Math.floor(t * 5), 4), local = t * 5 - seg;
+    const lb = Object.entries(ANCHORS).map(([name, c]) => {
+      const count = Math.round(c[seg] + (c[seg + 1] - c[seg]) * local);
+      return [P[name], count];
+    }).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const people = Math.round(38 + (24 - 38) * t);
+    const msgs = Math.round(3904 + (2731 - 3904) * t);
+    return { sub: `${people} people · ${msgs.toLocaleString()} messages sent`, lb };
+  }
   const eraJun21 = { date: "Sunday · Jun 20, 2021",
     msgs: [["me","boxes packed. last night at my old place"],["them","our place is ready for you 🏡"],["them","I cleared you two whole drawers. growth"],["me","OUR place. still not over that"],["them","get used to it 🙂"],["me","pizza on the floor tonight? no-furniture club"],["them","already ordered 🍕"]] };
   const eraMar19 = { date: "Friday · Mar 8, 2019",
@@ -1006,7 +1024,7 @@
       const o = old[key];
       if (!o) {
         el.style.opacity = "0";
-        requestAnimationFrame(() => { el.style.transition = "opacity .45s ease"; el.style.opacity = "1"; });
+        requestAnimationFrame(() => { el.style.transition = "opacity .28s ease"; el.style.opacity = "1"; });
         return;
       }
       const n = el.getBoundingClientRect();
@@ -1015,7 +1033,7 @@
       el.style.transition = "none";
       el.style.transform = `translate(${dx}px, ${dy}px)`;
       requestAnimationFrame(() => {
-        el.style.transition = "transform .55s cubic-bezier(.4,0,.2,1)";
+        el.style.transition = "transform .3s cubic-bezier(.4,0,.2,1)";
         el.style.transform = "";
       });
     });
@@ -1086,7 +1104,7 @@
 
     (async function loop() {
       // Initial staging: Time Machine at Now, reader waiting at June 2021.
-      renderTM(TM_STATES[0]);
+      renderTM(lineupAt(0));
       tmMonth.textContent = tmLabel(1);
       setTrack(tmFill, tmKnob, 1);
       renderMsgs(eraJun21);
@@ -1099,23 +1117,20 @@
         await sleep(500);
         await moveTo(tmKnob, 800);
         await sleep(350);
-        // Scrub back in stages, dwelling a couple of seconds on each era so
-        // the changing cast of the leaderboard can sink in.
-        let stateIdx = 0;
-        const onFrame = f => {
+        // One continuous scrub — the board re-ranks at ~18 points along the
+        // way, so people jump around constantly while the knob is moving.
+        const SAMPLES = 18;
+        let lastSample = 0;
+        await drag(tmFill, tmKnob, 1, TM_TARGET, 4600, f => {
           tmMonth.textContent = tmLabel(f);
-          while (stateIdx + 1 < TM_STATES.length && f < TM_STATES[stateIdx + 1].f) {
-            stateIdx++;
-            flipTM(TM_STATES[stateIdx]);
+          const t = Math.min(Math.max((1 - f) / (1 - TM_TARGET), 0), 1);
+          const sample = Math.round(t * SAMPLES);
+          if (sample !== lastSample) {
+            lastSample = sample;
+            flipTM(lineupAt(sample / SAMPLES));
           }
-        };
-        const stops = [0.86, 0.75, TM_TARGET];
-        let at = 1;
-        for (const stop of stops) {
-          await drag(tmFill, tmKnob, at, stop, 950, onFrame);
-          at = stop;
-          await sleep(2000);
-        }
+        });
+        await sleep(1400);
 
         const miaRow = tmLb.querySelector(".row");
         await moveTo(miaRow, 850, 0.35, 0.5);
@@ -1138,7 +1153,7 @@
         await sleep(300);
         await click(rdBack);
         await sleep(240);
-        renderTM(TM_STATES[0]);
+        renderTM(lineupAt(0));
         tmMonth.textContent = tmLabel(1);
         setTrack(tmFill, tmKnob, 1);
         scrRD.classList.remove("on");
