@@ -84,10 +84,10 @@ struct WhatsAppOnboardingView: View {
         VStack(spacing: 20) {
             Spacer()
 
-            Text("One more thing —")
+            Text("Include WhatsApp?")
                 .font(.largeTitle.bold())
 
-            Text("You have WhatsApp on this Mac. Want its history in your timeline too?")
+            Text("We found WhatsApp on this Mac.")
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -96,30 +96,35 @@ struct WhatsAppOnboardingView: View {
 
             HStack(spacing: 14) {
                 SourceChoiceCard(
-                    title: "iMessage only",
-                    subtitle: "Just your iMessage history",
-                    icons: [Color.brandBlue],
+                    title: "Messages only",
+                    subtitle: "Just your Messages history",
+                    apps: [.messages],
                     selected: !includeWhatsApp
                 ) { includeWhatsApp = false }
 
                 SourceChoiceCard(
-                    title: "iMessage + WhatsApp",
-                    subtitle: "Both apps, one merged timeline per person",
-                    icons: [Color.brandBlue, Color.green],
+                    title: "Messages + WhatsApp",
+                    subtitle: "One merged timeline per person",
+                    apps: [.messages, .whatsApp],
                     selected: includeWhatsApp
                 ) { includeWhatsApp = true }
             }
             .frame(maxWidth: 520)
 
-            Button("Start") {
+            Button {
                 appState.whatsAppEnabled = includeWhatsApp
                 appState.whatsAppPromptSeen = true
+            } label: {
+                Text("Start")
+                    .font(.title3.bold())
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 4)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .padding(.top, 6)
 
-            Text("Everything stays on your Mac. You can change this anytime in Settings.")
+            Text("You can change this anytime in Settings.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -129,10 +134,36 @@ struct WhatsAppOnboardingView: View {
     }
 }
 
+/// Mini app-icon tiles matching the real apps: Messages is a green gradient
+/// bubble, WhatsApp a green gradient phone-in-bubble.
+private enum SourceApp {
+    case messages, whatsApp
+
+    var symbol: String {
+        switch self {
+        case .messages: "message.fill"
+        case .whatsApp: "phone.bubble.left.fill"
+        }
+    }
+
+    var gradient: LinearGradient {
+        switch self {
+        case .messages:
+            LinearGradient(colors: [Color(red: 107/255, green: 227/255, blue: 111/255),
+                                    Color(red: 16/255, green: 195/255, blue: 47/255)],
+                           startPoint: .top, endPoint: .bottom)
+        case .whatsApp:
+            LinearGradient(colors: [Color(red: 91/255, green: 246/255, blue: 117/255),
+                                    Color(red: 15/255, green: 188/255, blue: 56/255)],
+                           startPoint: .top, endPoint: .bottom)
+        }
+    }
+}
+
 private struct SourceChoiceCard: View {
     let title: String
     let subtitle: String
-    let icons: [Color]
+    let apps: [SourceApp]
     let selected: Bool
     let action: () -> Void
 
@@ -140,12 +171,12 @@ private struct SourceChoiceCard: View {
         Button(action: action) {
             VStack(spacing: 10) {
                 HStack(spacing: -6) {
-                    ForEach(icons.indices, id: \.self) { i in
-                        Image(systemName: "message.fill")
-                            .font(.system(size: 22))
+                    ForEach(apps.indices, id: \.self) { i in
+                        Image(systemName: apps[i].symbol)
+                            .font(.system(size: 21))
                             .foregroundStyle(.white)
                             .frame(width: 42, height: 42)
-                            .background(icons[i], in: RoundedRectangle(cornerRadius: 10))
+                            .background(apps[i].gradient, in: RoundedRectangle(cornerRadius: 10))
                             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.paper, lineWidth: 2))
                     }
                 }
