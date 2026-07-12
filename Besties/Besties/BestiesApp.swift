@@ -1,6 +1,16 @@
 import SwiftUI
 import AppKit
 
+/// Brand palette, mirrored from the landing page so screenshots stay honest:
+/// paper #FDF8EE · ink #211E1A · sun #FFC53D · bubble #EFEAE0 · blue #0A7CFF
+extension Color {
+    static let paper = Color(red: 253/255, green: 248/255, blue: 238/255)
+    static let ink = Color(red: 33/255, green: 30/255, blue: 26/255)
+    static let sun = Color(red: 255/255, green: 197/255, blue: 61/255)
+    static let bubbleTan = Color(red: 239/255, green: 234/255, blue: 224/255)
+    static let brandBlue = Color(red: 10/255, green: 124/255, blue: 255/255)
+}
+
 @main
 struct BestiesApp: App {
     @State private var appState = AppState()
@@ -21,6 +31,9 @@ struct BestiesApp: App {
                 }
             }
             .frame(minWidth: 500, idealWidth: 600, minHeight: 400)
+            .background(Color.paper)
+            .fontDesign(.rounded)
+            .preferredColorScheme(.light)
             .task {
                 appState.checkAccess()
                 DispatchQueue.main.async {

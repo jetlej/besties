@@ -448,6 +448,7 @@ struct ContentView: View {
                     in: 0...Double(max(appState.timelineMonths.count - 1, 1)),
                     step: 1
                 )
+                .tint(.sun)
                 HStack {
                     Text(appState.timelineMonths.first.map(monthLabel) ?? "")
                     Spacer()
@@ -493,6 +494,7 @@ struct ContentView: View {
 struct KPICard: View {
     let value: String
     let label: String
+    var highlight: Bool = false   // sun-tinted; used for the clickable busiest-period cards
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -507,7 +509,8 @@ struct KPICard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+        .background(highlight ? Color.sun.opacity(0.28) : Color.white, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.ink.opacity(highlight ? 0.14 : 0.08)))
     }
 }
 
@@ -675,7 +678,7 @@ struct PodiumView: View {
                     if item.rank == 0 {
                         Image(systemName: "crown.fill")
                             .font(.system(size: 13))
-                            .foregroundStyle(.yellow)
+                            .foregroundStyle(Color.sun)
                     }
                     AvatarView(
                         name: item.entry.name,
@@ -700,7 +703,7 @@ struct PodiumView: View {
     }
 }
 
-let leaderboardColor = Color.blue
+let leaderboardColor = Color.brandBlue
 
 struct LeaderboardRow: View {
     let rank: Int

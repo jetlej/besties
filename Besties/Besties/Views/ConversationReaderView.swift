@@ -188,6 +188,8 @@ struct ConversationReaderView: View {
             Divider()
             scrubber
         }
+        .background(Color.paper)
+        .fontDesign(.rounded)
         .task { await model.start() }
     }
 
@@ -208,7 +210,7 @@ struct ConversationReaderView: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 116), spacing: 8)], spacing: 8) {
             ForEach(Array(kpiCards.enumerated()), id: \.offset) { _, card in
                 if let jump = card.jump {
-                    KPICard(value: card.value, label: card.label)
+                    KPICard(value: card.value, label: card.label, highlight: true)
                         .contentShape(Rectangle())
                         .onTapGesture { scrub(to: jump) }
                         .onHover { $0 ? NSCursor.pointingHand.push() : NSCursor.pop() }
@@ -308,6 +310,7 @@ struct ConversationReaderView: View {
                     }
                 }
             )
+            .tint(.sun)
             HStack {
                 Text(target.firstDate.formatted(.dateTime.month(.abbreviated).year()))
                 Spacer()
@@ -343,8 +346,8 @@ private struct MessageBubble: View {
                     .textSelection(.enabled)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(message.isFromMe ? Color.accentColor : Color(.quaternaryLabelColor))
-                    .foregroundStyle(message.isFromMe ? Color.white : Color.primary)
+                    .background(message.isFromMe ? Color.brandBlue : Color.bubbleTan)
+                    .foregroundStyle(message.isFromMe ? Color.white : Color.ink)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                 Text(message.date.formatted(.dateTime.hour().minute()))
                     .font(.caption2)
