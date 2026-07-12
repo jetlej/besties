@@ -40,25 +40,28 @@ struct OnboardingView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
 
-            Button("I've enabled it — check again") {
-                appState.checkAccess()
-                checkFailed = !appState.hasFullDiskAccess
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-
             if checkFailed {
-                VStack(spacing: 8) {
-                    Text("Still can't read your messages. macOS applies Full Disk Access when the app restarts.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 360)
-                    Button("Relaunch Besties") {
-                        PermissionChecker.relaunchApp()
-                    }
-                    .buttonStyle(.borderedProminent)
+                // FDA applies on restart, so once a check fails the useful
+                // action is relaunching — swap the button rather than stacking on.
+                Button("Relaunch Besties") {
+                    PermissionChecker.relaunchApp()
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+
+                Text("Enabled it already? macOS applies Full Disk Access when the app restarts — relaunch and you're in.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 320)
+            } else {
+                Button("I've enabled it — check again") {
+                    appState.checkAccess()
+                    checkFailed = !appState.hasFullDiskAccess
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
             }
 
             Spacer()
