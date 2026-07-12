@@ -87,13 +87,6 @@ struct WhatsAppOnboardingView: View {
             Text("Include WhatsApp?")
                 .font(.largeTitle.bold())
 
-            Text("We found WhatsApp on this Mac.")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 400)
-
             HStack(spacing: 14) {
                 SourceChoiceCard(
                     title: "Messages only",
@@ -139,10 +132,19 @@ struct WhatsAppOnboardingView: View {
 private enum SourceApp {
     case messages, whatsApp
 
-    var symbol: String {
+    /// Messages uses the system bubble; WhatsApp uses the official logo
+    /// (asset rendered from the brand glyph).
+    @ViewBuilder var glyph: some View {
         switch self {
-        case .messages: "message.fill"
-        case .whatsApp: "phone.bubble.left.fill"
+        case .messages:
+            Image(systemName: "message.fill")
+                .font(.system(size: 21))
+                .foregroundStyle(.white)
+        case .whatsApp:
+            Image("WhatsAppGlyph")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 27, height: 27)
         }
     }
 
@@ -172,9 +174,7 @@ private struct SourceChoiceCard: View {
             VStack(spacing: 10) {
                 HStack(spacing: -6) {
                     ForEach(apps.indices, id: \.self) { i in
-                        Image(systemName: apps[i].symbol)
-                            .font(.system(size: 21))
-                            .foregroundStyle(.white)
+                        apps[i].glyph
                             .frame(width: 42, height: 42)
                             .background(apps[i].gradient, in: RoundedRectangle(cornerRadius: 10))
                             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.paper, lineWidth: 2))
