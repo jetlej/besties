@@ -24,13 +24,16 @@ struct BestiesApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if appState.hasFullDiskAccess {
-                    ContentView(appState: appState)
-                } else {
+                if !appState.hasFullDiskAccess {
                     OnboardingView(appState: appState)
+                } else if appState.needsWhatsAppPrompt {
+                    WhatsAppOnboardingView(appState: appState)
+                } else {
+                    ContentView(appState: appState)
                 }
             }
             .frame(minWidth: 500, idealWidth: 600, minHeight: 400)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.paper)
             .fontDesign(.rounded)
             .preferredColorScheme(.light)
@@ -71,6 +74,17 @@ final class AppState {
     }
 
     var whatsAppInstalled: Bool { whatsAppStore.isInstalled }
+
+    private static let whatsAppPromptSeenKey = "whatsAppPromptSeen"
+
+    /// Whether the one-time WhatsApp onboarding step has been answered.
+    var whatsAppPromptSeen: Bool = UserDefaults.standard.bool(forKey: whatsAppPromptSeenKey) {
+        didSet { UserDefaults.standard.set(whatsAppPromptSeen, forKey: Self.whatsAppPromptSeenKey) }
+    }
+
+    /// WhatsApp detection needs Full Disk Access, so this is only meaningful
+    /// (and only asked) once access is granted.
+    var needsWhatsAppPrompt: Bool { !whatsAppPromptSeen && whatsAppInstalled }
     var allConversations: [Conversation] = []
     var resolvedConversations: [Conversation] = []
     var timelineMonths: [String] = []
