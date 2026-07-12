@@ -21,6 +21,7 @@ struct OnboardingView: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 360)
 
             VStack(alignment: .leading, spacing: 12) {
@@ -83,6 +84,7 @@ struct WhatsAppOnboardingView: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 400)
 
             HStack(spacing: 14) {
