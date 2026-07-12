@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>You're in! — Time Capsule</title>
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="light">
+<style>
+  :root {
+    --paper: #FDF8EE; --ink: #211E1A; --muted: #6E675E; --line: #EBE3D4;
+    --card: #FFFFFF; --blue: #0A7CFF; --sun: #FFC53D;
+    --pop: 6px 6px 0 color-mix(in srgb, var(--ink) 12%, transparent);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--paper);
+    background-image: radial-gradient(color-mix(in srgb, var(--ink) 6%, transparent) 1px, transparent 1.4px);
+    background-size: 26px 26px;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+    line-height: 1.6; -webkit-font-smoothing: antialiased;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .display { font-family: ui-rounded, -apple-system, BlinkMacSystemFont, system-ui, sans-serif; letter-spacing: -0.02em; }
+  .card {
+    background: var(--card); border: 2px solid var(--ink); border-radius: 22px;
+    box-shadow: var(--pop); max-width: 480px; width: 100%;
+    padding: 44px 36px; text-align: center;
+    animation: rise .6s cubic-bezier(.3,1.25,.4,1) both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(24px) scale(.97); } }
+  .pill { font-size: 3rem; display: inline-block; animation: bob 3s ease-in-out infinite alternate; }
+  @keyframes bob { from { transform: translateY(-4px) rotate(-6deg); } to { transform: translateY(4px) rotate(6deg); } }
+  h1 { font-size: 2rem; font-weight: 800; margin: 14px 0 10px; }
+  .hl {
+    background: linear-gradient(var(--sun), var(--sun)) left bottom / 100% .16em no-repeat;
+    padding-bottom: .08em;
+  }
+  p { color: var(--muted); margin-bottom: 8px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 22px;
+    background: var(--blue); color: #fff; text-decoration: none;
+    font-weight: 700; font-size: 1.05rem; padding: 14px 32px; border-radius: 999px;
+    border: 2px solid var(--ink); box-shadow: 3px 3px 0 var(--ink);
+    transition: transform .13s ease, box-shadow .13s ease;
+  }
+  .btn:hover { transform: translate(-1px,-1px); box-shadow: 5px 5px 0 var(--ink); }
+  .btn:active { transform: translate(2px,2px); box-shadow: 0 0 0 var(--ink); }
+  .steps { text-align: left; margin: 26px auto 0; max-width: 340px; font-size: .95rem; color: var(--muted); }
+  .steps li { margin-bottom: 6px; }
+  .err { display: none; color: var(--muted); font-size: .95rem; margin-top: 18px; }
+  footer { margin-top: 26px; font-size: .85rem; color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { .card, .pill { animation: none; } }
+</style>
+</head>
+<body>
+  <div class="card">
+    <span class="pill" aria-hidden="true">💊</span>
+    <h1 class="display">You're <span class="hl">in</span>. Time travel awaits.</h1>
+    <p>Thanks for supporting an independent maker. 💛</p>
+    <a class="btn" id="dlBtn" href="#">Download Time Capsule</a>
+    <p class="err" id="err">Hmm — we couldn't verify this purchase link. If you just paid, use the link from your email receipt, or reply to it and a human will sort you out.</p>
+    <ol class="steps">
+      <li>Unzip the download</li>
+      <li>Drag <b>Time Capsule</b> to Applications</li>
+      <li>Open it and follow the 20-second setup</li>
+    </ol>
+    <footer>P.S. Go text your mom. 📱</footer>
+  </div>
+<script>
+  const sid = new URLSearchParams(location.search).get("session_id") || "";
+  const btn = document.getElementById("dlBtn");
+  if (/^cs_(test|live)_[A-Za-z0-9]+$/.test(sid)) {
+    btn.href = "/api/download?session_id=" + encodeURIComponent(sid);
+  } else {
+    btn.style.display = "none";
+    document.getElementById("err").style.display = "block";
+  }
+</script>
+</body>
+</html>
