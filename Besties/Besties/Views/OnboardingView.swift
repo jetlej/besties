@@ -7,11 +7,11 @@ struct OnboardingView: View {
     @State private var checkFailed = false
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 16) {
             Spacer()
 
             Image(systemName: "message.circle.fill")
-                .font(.system(size: 64))
+                .font(.system(size: 52))
                 .foregroundStyle(Color.brandBlue)
 
             Text("Besties")
@@ -40,33 +40,37 @@ struct OnboardingView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
 
-            if checkFailed {
-                // FDA applies on restart, so once a check fails the useful
-                // action is relaunching — swap the button rather than stacking on.
-                Button("Relaunch Besties") {
-                    PermissionChecker.relaunchApp()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
+            // Fixed-height slot for both states, so swapping the button for
+            // relaunch + caption never shifts or re-centers the layout.
+            VStack(spacing: 8) {
+                if checkFailed {
+                    Button("Relaunch Besties") {
+                        PermissionChecker.relaunchApp()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
 
-                Text("Enabled it already? macOS applies Full Disk Access when the app restarts — relaunch and you're in.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 320)
-            } else {
-                Button("I've enabled it — check again") {
-                    appState.checkAccess()
-                    checkFailed = !appState.hasFullDiskAccess
+                    Text("Enabled it already? macOS applies Full Disk Access when the app restarts — relaunch and you're in.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 320)
+                } else {
+                    Button("I've enabled it — check again") {
+                        appState.checkAccess()
+                        checkFailed = !appState.hasFullDiskAccess
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
             }
+            .frame(height: 72, alignment: .top)
 
             Spacer()
         }
-        .padding(40)
+        .padding(.horizontal, 40)
+        .padding(.vertical, 20)
     }
 }
 

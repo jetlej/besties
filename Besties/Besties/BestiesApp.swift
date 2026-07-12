@@ -32,7 +32,7 @@ struct BestiesApp: App {
                     ContentView(appState: appState)
                 }
             }
-            .frame(minWidth: 500, idealWidth: 600, minHeight: 400)
+            .frame(minWidth: 500, idealWidth: 600, minHeight: 480)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.paper)
             .fontDesign(.rounded)
