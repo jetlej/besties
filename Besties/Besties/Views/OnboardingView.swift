@@ -16,10 +16,10 @@ struct OnboardingView: View {
                 .scaledToFit()
                 .frame(width: 84, height: 84)
 
-            Text("Besties")
+            Text(appName)
                 .font(.largeTitle.bold())
 
-            Text("Besties needs Full Disk Access to read your iMessage history.")
+            Text("\(appName) needs Full Disk Access to read your iMessage history.")
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -29,7 +29,7 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Label("Open System Settings → Privacy & Security", systemImage: "1.circle.fill")
                 Label("Select Full Disk Access", systemImage: "2.circle.fill")
-                Label("Enable Besties in the list", systemImage: "3.circle.fill")
+                Label("Enable \(appName) in the list", systemImage: "3.circle.fill")
             }
             .font(.body)
             .padding()
@@ -46,7 +46,7 @@ struct OnboardingView: View {
             // relaunch + caption never shifts or re-centers the layout.
             VStack(spacing: 8) {
                 if checkFailed {
-                    Button("Relaunch Besties") {
+                    Button("Relaunch \(appName)") {
                         PermissionChecker.relaunchApp()
                     }
                     .buttonStyle(.bordered)

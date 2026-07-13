@@ -1,18 +1,4 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Besties — a time machine for your messages</title>
-<meta name="description" content="Besties turns your iMessage and WhatsApp history into a timeline you can travel. Scrub to any month of your life, see who you were closest to, and drop into the exact conversation. 100% private — nothing ever leaves your Mac.">
-<meta property="og:title" content="Besties — a time machine for your messages">
-<meta property="og:description" content="Scrub back through years of iMessage and WhatsApp. See who mattered, jump to any moment, read it like it was. Entirely on-device.">
-<meta property="og:image" content="https://time-capsule-one-liart.vercel.app/icon.png">
-<meta name="color-scheme" content="light">
-<link rel="icon" type="image/png" href="/icon.png">
-<link rel="apple-touch-icon" href="/icon.png">
-</head>
-<body>
+<title>__APP_NAME__ — a time machine for your messages</title>
 <style>
   :root {
     --paper: #FDF8EE;
@@ -587,9 +573,9 @@
 </style>
 
 <nav>
-  <a class="wordmark display" href="#top" aria-label="Besties home">
+  <a class="wordmark display" href="#top" aria-label="__APP_NAME__ home">
     <span class="appmark" aria-hidden="true"></span>
-    Besties
+    __APP_NAME__
   </a>
   <div class="nav-links">
     <a href="#privacy">Privacy</a>
@@ -1031,7 +1017,7 @@
     <div class="faq">
       <details>
         <summary>Why does it need Full Disk Access?</summary>
-        <p>Your Mac stores your iMessage history in a local database that only apps with Full Disk Access may read — that's the only door Apple provides. Besties opens that database read-only, on your machine, and nothing else. You can verify every byte of that claim in the source code.</p>
+        <p>Your Mac stores your iMessage history in a local database that only apps with Full Disk Access may read — that's the only door Apple provides. __APP_NAME__ opens that database read-only, on your machine, and nothing else. You can verify every byte of that claim in the source code.</p>
       </details>
       <details>
         <summary>Does anything get uploaded, ever?</summary>
@@ -1039,23 +1025,23 @@
       </details>
       <details>
         <summary>Which messaging apps does it support?</summary>
-        <p>iMessage and WhatsApp. Besties reads the history both apps already keep on your Mac and merges each person's threads into one timeline — so a friend you text on both shows up as one person, one history.</p>
+        <p>iMessage and WhatsApp. __APP_NAME__ reads the history both apps already keep on your Mac and merges each person's threads into one timeline — so a friend you text on both shows up as one person, one history.</p>
       </details>
       <details>
         <summary>Can it change or delete my messages?</summary>
-        <p>No. Besties opens the Messages database in read-only mode — it's technically incapable of writing to it. Your conversations can't be modified, reordered, or deleted by the app.</p>
+        <p>No. __APP_NAME__ opens the Messages database in read-only mode — it's technically incapable of writing to it. Your conversations can't be modified, reordered, or deleted by the app.</p>
       </details>
       <details>
         <summary>How do I install it?</summary>
-        <p>Open the download and drag Besties into the Applications folder — the classic Mac install. Open it and it walks you through granting Full Disk Access (about 20 seconds in System Settings), then starts reading your history immediately.</p>
+        <p>Open the download and drag __APP_NAME__ into the Applications folder — the classic Mac install. Open it and it walks you through granting Full Disk Access (about 20 seconds in System Settings), then starts reading your history immediately.</p>
       </details>
       <details>
         <summary>My history doesn't go back very far — why?</summary>
-        <p>Besties can only see the messages your Mac has. If you have "Messages in iCloud" turned on, your Mac usually holds your full history. If your history looks short, enable Messages in iCloud on your Mac and give it time to sync, then relaunch the app.</p>
+        <p>__APP_NAME__ can only see the messages your Mac has. If you have "Messages in iCloud" turned on, your Mac usually holds your full history. If your history looks short, enable Messages in iCloud on your Mac and give it time to sync, then relaunch the app.</p>
       </details>
       <details>
         <summary>What about group chats?</summary>
-        <p>Besties focuses on your one-on-one conversations — the relationships. Group chats aren't included right now.</p>
+        <p>__APP_NAME__ focuses on your one-on-one conversations — the relationships. Group chats aren't included right now.</p>
       </details>
       <details>
         <summary>What does it run on?</summary>
@@ -1072,7 +1058,7 @@
 <footer>
   <a class="wordmark display" href="#top" style="color: var(--muted)">
     <span class="appmark" aria-hidden="true"></span>
-    Besties
+    __APP_NAME__
   </a>
   <p>Made with 💛 in New York City · <a href="https://github.com/jetlej/besties" target="_blank" rel="noopener">Source on GitHub</a></p>
   <p style="margin-top:14px;font-weight:600;color:var(--ink)">P.S. Go text your mom. 📱</p>
@@ -1375,5 +1361,3 @@
     setTimeout(() => { copyBtn.textContent = "Copy AI Prompt"; copyBtn.classList.remove("ok"); }, 2000);
   });
 </script>
-</body>
-</html>

@@ -1,6 +1,10 @@
 import SwiftUI
 import AppKit
 
+/// The product name, read from the bundle so PRODUCT_NAME in the Xcode
+/// project is the single place the app is ever renamed.
+let appName = Bundle.main.object(forInfoDictionaryKey: kCFBundleNameKey as String) as? String ?? "Besties"
+
 /// Brand palette, mirrored from the landing page so screenshots stay honest:
 /// paper #FDF8EE · ink #211E1A · sun #FFC53D · bubble #EFEAE0 · blue #0A7CFF
 extension Color {
@@ -40,7 +44,7 @@ struct BestiesApp: App {
             .task {
                 appState.checkAccess()
                 DispatchQueue.main.async {
-                    NSApp.windows.first?.title = "Besties"
+                    NSApp.windows.first?.title = appName
                 }
             }
         }
