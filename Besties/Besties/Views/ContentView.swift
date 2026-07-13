@@ -494,7 +494,6 @@ struct ContentView: View {
 struct KPICard: View {
     let value: String
     let label: String
-    var highlight: Bool = false   // sun-tinted; used for the clickable busiest-period cards
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -509,8 +508,8 @@ struct KPICard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(highlight ? Color.sun.opacity(0.28) : Color.white, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.ink.opacity(highlight ? 0.14 : 0.08)))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.ink.opacity(0.08)))
     }
 }
 

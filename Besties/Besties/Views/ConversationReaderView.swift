@@ -210,7 +210,7 @@ struct ConversationReaderView: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 116), spacing: 8)], spacing: 8) {
             ForEach(Array(kpiCards.enumerated()), id: \.offset) { _, card in
                 if let jump = card.jump {
-                    KPICard(value: card.value, label: card.label, highlight: true)
+                    KPICard(value: card.value, label: card.label)
                         .contentShape(Rectangle())
                         .onTapGesture { scrub(to: jump) }
                         .onHover { $0 ? NSCursor.pointingHand.push() : NSCursor.pop() }
@@ -287,6 +287,7 @@ struct ConversationReaderView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
+        .background(Color.white)
         .scrollPosition(id: Binding(get: { model.scrollTo }, set: { model.scrollTo = $0 }), anchor: .center)
         .overlay {
             if model.isReady && model.messages.isEmpty {
