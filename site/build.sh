@@ -23,7 +23,7 @@ cat <<HEAD
 <meta name="description" content="${APP_NAME} turns your iMessage and WhatsApp history into a timeline you can travel. Scrub to any month of your life, see who you were closest to, and drop into the exact conversation. 100% private — nothing ever leaves your Mac.">
 <meta property="og:title" content="${APP_NAME} — a time machine for your messages">
 <meta property="og:description" content="Scrub back through years of iMessage and WhatsApp. See who mattered, jump to any moment, read it like it was. Entirely on-device.">
-<meta property="og:image" content="https://time-capsule-one-liart.vercel.app/icon.png">
+<meta property="og:image" content="https://besties.gg/icon.png">
 <meta name="color-scheme" content="light">
 <link rel="icon" type="image/png" href="/icon.png">
 <link rel="apple-touch-icon" href="/icon.png">
