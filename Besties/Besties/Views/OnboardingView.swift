@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Step 1: Full Disk Access. WhatsApp can't even be detected until this is
 /// granted, so the WhatsApp question lives on its own page afterward.
@@ -10,9 +11,10 @@ struct OnboardingView: View {
         VStack(spacing: 16) {
             Spacer()
 
-            Image(systemName: "message.circle.fill")
-                .font(.system(size: 52))
-                .foregroundStyle(Color.brandBlue)
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 84, height: 84)
 
             Text("Besties")
                 .font(.largeTitle.bold())

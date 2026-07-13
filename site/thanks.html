@@ -6,6 +6,8 @@
 <title>You're in! — Time Capsule</title>
 <meta name="robots" content="noindex">
 <meta name="color-scheme" content="light">
+<link rel="icon" type="image/png" href="/icon.png">
+<link rel="apple-touch-icon" href="/icon.png">
 <style>
   :root {
     --paper: #FDF8EE; --ink: #211E1A; --muted: #6E675E; --line: #EBE3D4;
@@ -31,7 +33,7 @@
     animation: rise .6s cubic-bezier(.3,1.25,.4,1) both;
   }
   @keyframes rise { from { opacity: 0; transform: translateY(24px) scale(.97); } }
-  .pill { font-size: 3rem; display: inline-block; animation: bob 3s ease-in-out infinite alternate; }
+  .pill { width: 84px; height: 84px; display: inline-block; animation: bob 3s ease-in-out infinite alternate; }
   @keyframes bob { from { transform: translateY(-4px) rotate(-6deg); } to { transform: translateY(4px) rotate(6deg); } }
   h1 { font-size: 2rem; font-weight: 800; margin: 14px 0 10px; }
   .hl {
@@ -57,7 +59,7 @@
 </head>
 <body>
   <div class="card">
-    <span class="pill" aria-hidden="true">💊</span>
+    <img class="pill" src="/icon.png" alt="" width="84" height="84">
     <h1 class="display">Time travel <span class="hl">awaits</span>.</h1>
     <a class="btn" id="dlBtn" href="#">Download Time Capsule</a>
     <p class="err" id="err">Hmm — we couldn't verify this purchase link. If you just paid, use the link from your email receipt, or reply to it and a human will sort you out.</p>
