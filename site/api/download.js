@@ -18,7 +18,8 @@ module.exports = async (req, res) => {
     return;
   }
   const session = await r.json();
-  if (session.payment_status !== "paid") {
+  // "no_payment_required" covers 100%-off promo codes (friends links).
+  if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") {
     res.status(402).send("This purchase hasn't been completed yet.");
     return;
   }
