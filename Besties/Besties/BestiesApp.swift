@@ -45,14 +45,31 @@ struct BestiesApp: App {
                 appState.checkAccess()
                 DispatchQueue.main.async {
                     NSApp.windows.first?.title = appName
+                    Self.applyDefaultFrameOnce()
                 }
             }
         }
-        .defaultSize(width: 600, height: 500)
+        .defaultSize(width: 800, height: (NSScreen.main?.visibleFrame.height ?? 960) - 48)
 
         Settings {
             SettingsView(appState: appState)
         }
+    }
+
+    /// Upgrade existing installs to the new default frame — 800pt wide,
+    /// screen height minus a little breathing room — exactly once, so manual
+    /// resizes stick afterward.
+    private static func applyDefaultFrameOnce() {
+        let key = "didApplyDefaultFrame800"
+        guard !UserDefaults.standard.bool(forKey: key),
+              let window = NSApp.windows.first,
+              let screen = window.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        let margin: CGFloat = 24
+        let frame = NSRect(x: visible.midX - 400, y: visible.minY + margin,
+                           width: 800, height: visible.height - margin * 2)
+        window.setFrame(frame, display: true)
+        UserDefaults.standard.set(true, forKey: key)
     }
 }
 
