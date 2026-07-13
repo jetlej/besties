@@ -40,7 +40,7 @@ struct BestiesApp: App {
             .task {
                 appState.checkAccess()
                 DispatchQueue.main.async {
-                    NSApp.windows.first?.title = "Besties"
+                    NSApp.windows.first?.title = "Time Capsule"
                 }
             }
         }

@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Build, sign, notarize, and staple Besties for distribution outside the App Store.
-# Produces Besties.zip at the repo root — send that to friends; it installs with
+# Produces "Time Capsule.zip" at the repo root — send that to friends; it installs with
 # no Gatekeeper warning.
 #
 # Reuses the same notarytool keychain profile as the Speed app (SPEED_NOTARY,
@@ -16,7 +16,7 @@ IDENTITY="Developer ID Application: Jordan Lejuwaan (34HCA7L7PV)"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT/Besties"
 
-APP="build/Build/Products/Release/Besties.app"
+APP="build/Build/Products/Release/Time Capsule.app"
 # Use the source entitlements, NOT the build-generated .xcent — the latter injects
 # com.apple.security.get-task-allow, which the notary service rejects.
 ENTITLEMENTS="Besties/Besties.entitlements"
@@ -41,11 +41,11 @@ echo "▶ Stapling the notarization ticket to the app…"
 xcrun stapler staple "$APP"
 
 echo "▶ Packaging the distributable zip…"
-rm -f "$ROOT/Besties.zip"
-ditto -c -k --keepParent "$APP" "$ROOT/Besties.zip"
+rm -f "$ROOT/Time Capsule.zip"
+ditto -c -k --keepParent "$APP" "$ROOT/Time Capsule.zip"
 
 echo "▶ Final verification…"
 xcrun stapler validate "$APP"
 spctl -a -vvv --type execute "$APP"
 
-echo "✅ Done → $ROOT/Besties.zip  (send this to friends)"
+echo "✅ Done → $ROOT/Time Capsule.zip  (send this to friends)"
