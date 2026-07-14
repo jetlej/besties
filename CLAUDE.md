@@ -5,7 +5,7 @@ Product name is **Besties** (site: https://besties.gg). Bundle id `com.besties.a
 
 ## Deploying the website
 
-- **Always use `/opt/homebrew/bin/vercel`** (v55+, logged in as `jetlej`, team `lej`, project `besties`). Other vercel binaries on PATH (e.g. nvm's node16 one) are stale and fail with token errors — do not use `vercel` bare, do not run `vercel login` when a "logged out" error appears; it's the wrong binary.
+- Deploy with the `vercel` CLI (v55+, logged in as `jetlej`, team `lej`, project `besties`). The only install is `/opt/homebrew/bin/vercel` — duplicate stale copies were removed 2026-07-14. If a "logged out"/token error ever appears, check `which -a vercel` for a stale shadow copy before re-authenticating.
 - Site source lives in `site/src/*.html` templates + `site/build.sh` (which holds `APP_NAME` — the single place the product name is defined). **Never edit `site/index.html` or `site/thanks.html` directly**; they are generated.
 - Deploy = `cd site && ./build.sh && /opt/homebrew/bin/vercel deploy --prod --yes`
 - **Do NOT connect the Vercel project to Git / auto-deploy.** Deploys must come from this machine: `site/dl/` (gitignored — the repo is public) holds the paid, notarized `Besties-<hex>.dmg` that buyers download. A Git-based deploy would ship without it and break all download links.
