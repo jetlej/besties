@@ -23,7 +23,14 @@ cat <<HEAD
 <meta name="description" content="${APP_NAME} turns your iMessage and WhatsApp history into a timeline you can travel. Scrub to any month of your life, see who you were closest to, and drop into the exact conversation. 100% private — nothing ever leaves your Mac.">
 <meta property="og:title" content="${APP_NAME} — a time machine for your messages">
 <meta property="og:description" content="Scrub back through years of iMessage and WhatsApp. See who mattered, jump to any moment, read it like it was. Entirely on-device.">
-<meta property="og:image" content="https://besties.gg/icon.png">
+<meta property="og:image" content="https://besties.gg/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${APP_NAME} — a time machine for your messages">
+<meta name="twitter:description" content="Scrub back through years of iMessage and WhatsApp. See who mattered, jump to any moment, read it like it was. Entirely on-device.">
+<meta name="twitter:image" content="https://besties.gg/og.png">
 <meta name="color-scheme" content="light">
 <link rel="icon" type="image/png" href="/icon.png">
 <link rel="apple-touch-icon" href="/icon.png">
