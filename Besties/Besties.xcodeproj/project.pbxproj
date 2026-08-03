@@ -20,6 +20,8 @@
 		A10000010000000000000012 /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000012 /* ChatMessage.swift */; };
 		A10000010000000000000013 /* ConversationReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000013 /* ConversationReaderView.swift */; };
 		A10000010000000000000014 /* WhatsAppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000014 /* WhatsAppStore.swift */; };
+		A10000010000000000000018 /* SearchIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000018 /* SearchIndex.swift */; };
+		A10000010000000000000019 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000019 /* SearchView.swift */; };
 		A10000010000000000000015 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000015 /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
@@ -38,6 +40,8 @@
 		A20000010000000000000012 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		A20000010000000000000013 /* ConversationReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationReaderView.swift; sourceTree = "<group>"; };
 		A20000010000000000000014 /* WhatsAppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsAppStore.swift; sourceTree = "<group>"; };
+		A20000010000000000000018 /* SearchIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchIndex.swift; sourceTree = "<group>"; };
+		A20000010000000000000019 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		A20000010000000000000015 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A30000010000000000000001 /* Besties.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Besties.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -90,6 +94,7 @@
 			children = (
 				A20000010000000000000003 /* MessageStore.swift */,
 				A20000010000000000000014 /* WhatsAppStore.swift */,
+				A20000010000000000000018 /* SearchIndex.swift */,
 				A20000010000000000000004 /* ConversationAnalyzer.swift */,
 				A20000010000000000000005 /* ContactResolver.swift */,
 				A20000010000000000000006 /* PermissionChecker.swift */,
@@ -104,6 +109,7 @@
 				A20000010000000000000008 /* ContentView.swift */,
 				A20000010000000000000013 /* ConversationReaderView.swift */,
 				A20000010000000000000015 /* SettingsView.swift */,
+				A20000010000000000000019 /* SearchView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -192,7 +198,9 @@
 				A10000010000000000000002 /* Conversation.swift in Sources */,
 				A10000010000000000000003 /* MessageStore.swift in Sources */,
 				A10000010000000000000014 /* WhatsAppStore.swift in Sources */,
+				A10000010000000000000018 /* SearchIndex.swift in Sources */,
 				A10000010000000000000015 /* SettingsView.swift in Sources */,
+				A10000010000000000000019 /* SearchView.swift in Sources */,
 				A10000010000000000000004 /* ConversationAnalyzer.swift in Sources */,
 				A10000010000000000000005 /* ContactResolver.swift in Sources */,
 				A10000010000000000000006 /* PermissionChecker.swift in Sources */,

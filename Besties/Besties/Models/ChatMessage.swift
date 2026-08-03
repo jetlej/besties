@@ -20,8 +20,15 @@ struct ReaderTarget: Identifiable {
     let name: String
     let handle: String                // busiest handle, for the avatar
     let imessageHandleIDs: [Int64]    // handle rowids (SMS + iMessage + email)
+    /// chat rowids to read directly, skipping the handle → 1:1 chat lookup.
+    /// Set only when opening a group chat from Search; nil elsewhere.
+    var imessageChatIDs: [Int64]? = nil
     let whatsAppChatIDs: [Int64]      // ZWACHATSESSION Z_PKs
     let anchorDate: Date              // where the scrubber lands on open
+    /// ChatMessage.id of the message that was searched for, flashed on arrival.
+    var anchorMessageID: String? = nil
+    /// The search terms that found it, highlighted inside that bubble's text.
+    var highlightTerms: [String] = []
     let firstDate: Date               // scrubber min / conversation start
     let lastDate: Date                // scrubber max / most recent message
     let totalMessages: Int

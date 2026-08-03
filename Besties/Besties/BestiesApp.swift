@@ -50,6 +50,12 @@ struct BestiesApp: App {
             }
         }
         .defaultSize(width: 800, height: (NSScreen.main?.visibleFrame.height ?? 960) - 48)
+        .commands {
+            CommandGroup(after: .textEditing) {
+                Button("Find") { appState.searchFocusRequest += 1 }
+                    .keyboardShortcut("f", modifiers: .command)
+            }
+        }
 
         Settings {
             SettingsView(appState: appState)
@@ -117,6 +123,18 @@ final class AppState {
     @ObservationIgnored private var avatarCache: [String: Data?] = [:]
     var isLoading = false
     var error: String?
+
+    // Full-content search: sidecar FTS index, synced in the background on launch.
+    let searchIndex = SearchIndex()
+    var searchProgress: (done: Int, total: Int)?
+    var searchIndexedCount = 0
+    var chatInfoByID: [Int64: MessageStore.ChatInfo] = [:]
+    var iMessageConvoByHandleID: [Int64: Conversation] = [:]
+    var whatsAppConvoBySessionID: [Int64: Conversation] = [:]
+    /// Bumped by ⌘F: ContentView switches to the Search tab, SearchView focuses
+    /// the field (a counter, so repeat presses refocus it).
+    var searchFocusRequest = 0
+    @ObservationIgnored private var searchSyncStarted = false
 
     private let messageStore = MessageStore()
     private let whatsAppStore = WhatsAppStore()
@@ -220,6 +238,46 @@ final class AppState {
         }
     }
 
+    /// One-time (per launch) background sync of the full-text search index.
+    /// First run indexes the whole history (~20s for 1M messages); afterwards
+    /// only new messages are picked up, which is near-instant.
+    private func startSearchSync() {
+        guard !searchSyncStarted else { return }
+        searchSyncStarted = true
+        let index = searchIndex
+        Task {
+            self.chatInfoByID = await Task.detached {
+                Dictionary(
+                    ((try? MessageStore().fetchChatInfos()) ?? []).map { ($0.chatID, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+            }.value
+            let counted = await Task.detached { index.indexedCount() }.value
+            self.searchIndexedCount = counted
+            _ = await Task.detached {
+                try? index.sync { done, total in
+                    DispatchQueue.main.async { self.searchProgress = (done, total) }
+                }
+            }.value
+            // Same queue as the progress callback, so the last batch's update
+            // can't land after this and leave the UI stuck "Rebuilding…".
+            DispatchQueue.main.async { self.searchProgress = nil }
+            self.searchIndexedCount = await Task.detached { index.indexedCount() }.value
+        }
+    }
+
+    /// Throws the sidecar index away and indexes from scratch — the escape
+    /// hatch when the index is stale (it keeps messages chat.db has deleted).
+    func rebuildSearchIndex() {
+        for suffix in ["", "-wal", "-shm"] {
+            try? FileManager.default.removeItem(atPath: searchIndex.indexPath + suffix)
+        }
+        searchIndexedCount = 0
+        searchProgress = nil
+        searchSyncStarted = false
+        startSearchSync()
+    }
+
     func avatar(forHandle handle: String) -> Data? {
         if let cached = avatarCache[handle] { return cached }
         let data = contactResolver.imageData(forHandle: handle)
@@ -316,7 +374,16 @@ final class AppState {
             case .success(let resolved):
                 self.resolvedConversations = resolved
                 self.allConversations = resolved.sorted { $0.totalMessages > $1.totalMessages }
+                self.iMessageConvoByHandleID = Dictionary(
+                    resolved.filter { $0.source == .iMessage }.map { ($0.rowID, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+                self.whatsAppConvoBySessionID = Dictionary(
+                    resolved.filter { $0.source == .whatsApp }.map { ($0.rowID, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                )
                 self.isLoading = false
+                self.startSearchSync()
             case .failure(let error):
                 self.error = error.localizedDescription
                 self.isLoading = false

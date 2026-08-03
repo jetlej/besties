@@ -17,8 +17,10 @@ xcuserdata/
 
 # Build artifacts
 Besties.zip
+Besties.dmg
 
 # IDE
 .vscode/
 .cursor/
 *.code-workspace
+build-debug/

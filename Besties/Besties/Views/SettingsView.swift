@@ -17,6 +17,18 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            Divider()
+                .padding(.vertical, 4)
+
+            Button(appState.searchProgress == nil ? "Rebuild search index" : "Rebuilding…") {
+                appState.rebuildSearchIndex()
+            }
+            .disabled(appState.searchProgress != nil)
+            Text("Search can still turn up messages you've since deleted in Messages — rebuilding drops them and re-reads your history.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(20)
         .frame(width: 380)

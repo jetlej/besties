@@ -10,6 +10,12 @@ final class ReaderModel {
     var hasOlder = false
     var hasNewer = false
     var isReady = false
+    /// The message a search sent the reader to — flashed briefly, then cleared.
+    var highlightID: String?
+    /// Same message, but persistent: its matched words stay marked so the eye
+    /// can find the mention after the ring fades. Cleared on the next plain jump.
+    var textHighlightID: String?
+    var highlightTerms: [String] = []
 
     private var imChatIDs: [Int64] = []
     private var waChatIDs: [Int64] = []
@@ -28,10 +34,14 @@ final class ReaderModel {
     func start() async {
         guard !started else { return }
         started = true
-        let handleIDs = target.imessageHandleIDs
-        imChatIDs = await Task.detached {
-            (try? MessageStore().fetchChatIDs(handleIDs: handleIDs)) ?? []
-        }.value
+        if let chatIDs = target.imessageChatIDs {
+            imChatIDs = chatIDs
+        } else {
+            let handleIDs = target.imessageHandleIDs
+            imChatIDs = await Task.detached {
+                (try? MessageStore().fetchChatIDs(handleIDs: handleIDs)) ?? []
+            }.value
+        }
         waChatIDs = target.whatsAppChatIDs
         isReady = true
         let im = imChatIDs
@@ -43,7 +53,13 @@ final class ReaderModel {
             }
             return RelationshipPeaks(dayCounts: counts)
         }.value
-        await jump(to: target.anchorDate)
+        await jump(to: target.anchorDate, highlight: target.anchorMessageID, terms: target.highlightTerms)
+    }
+
+    /// This conversation's chats, for scoping search to it.
+    var chatRefs: [SearchIndex.ChatRef] {
+        imChatIDs.map { SearchIndex.ChatRef(source: .iMessage, id: $0) }
+            + waChatIDs.map { SearchIndex.ChatRef(source: .whatsApp, id: $0) }
     }
 
     /// One merged page across both stores, ascending. Each source pages from
@@ -87,8 +103,9 @@ final class ReaderModel {
     }
 
     /// Replace the window with context around `date`: a little history above,
-    /// a page of messages at/after the anchor below.
-    func jump(to date: Date) async {
+    /// a page of messages at/after the anchor below. `highlight` is the
+    /// ChatMessage.id of a searched-for message, flashed once it's on screen.
+    func jump(to date: Date, highlight: String? = nil, terms: [String] = []) async {
         guard imChatIDs.isEmpty == false || waChatIDs.isEmpty == false, !loading else { return }
         loading = true
         defer { loading = false }
@@ -109,6 +126,15 @@ final class ReaderModel {
         hasOlder = result.older.more
         hasNewer = result.newer.more
         scrollTo = result.newer.page.first?.id ?? result.older.page.last?.id
+
+        highlightID = highlight
+        textHighlightID = highlight
+        highlightTerms = highlight == nil ? [] : terms
+        guard let highlight else { return }
+        Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            if highlightID == highlight { highlightID = nil }
+        }
     }
 
     func loadOlder() async {
@@ -163,6 +189,11 @@ final class ReaderModel {
 struct ConversationReaderView: View {
     @State private var model: ReaderModel
     @State private var scrubPosition: Double
+    @State private var showSearch = false
+    @State private var searchQuery = ""
+    @State private var searchResults: [SearchIndex.Result] = []
+    @State private var searchTotal = 0
+    @FocusState private var searchFocused: Bool
     let appState: AppState
     @Environment(\.dismiss) private var dismiss
 
@@ -182,6 +213,10 @@ struct ConversationReaderView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            if showSearch {
+                searchPanel
+                Divider()
+            }
             kpiBand
             Divider()
             transcript
@@ -191,6 +226,7 @@ struct ConversationReaderView: View {
         .background(Color.paper)
         .fontDesign(.rounded)
         .task { await model.start() }
+        .task(id: "\(searchQuery)|\(model.isReady)") { await runSearch() }
     }
 
     private var header: some View {
@@ -201,9 +237,109 @@ struct ConversationReaderView: View {
                 .font(.headline)
                 .lineLimit(1)
             Spacer()
+            Button {
+                showSearch.toggle()
+                if showSearch { searchFocused = true } else { searchQuery = "" }
+            } label: {
+                Image(systemName: "magnifyingglass")
+            }
+            .buttonStyle(.plain)
+            .help("Search this conversation")
             Button("Done") { dismiss() }
         }
         .padding(12)
+    }
+
+    // MARK: - In-conversation search
+
+    /// Searches the same index as the Search tab, scoped to this
+    /// conversation's chats; picking a match jumps the transcript to it.
+    private var searchPanel: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search this conversation", text: $searchQuery)
+                    .textFieldStyle(.plain)
+                    .focused($searchFocused)
+                if searchTotal > 0 {
+                    Text("\(searchTotal.formatted()) \(searchTotal == 1 ? "match" : "matches")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    showSearch = false
+                    searchQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            if !searchResults.isEmpty {
+                Divider()
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(searchResults) { result in
+                            Button {
+                                scrub(to: result.date, highlight: result.id, terms: queryTerms)
+                            } label: {
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Text(result.date.formatted(date: .abbreviated, time: .omitted))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .monospacedDigit()
+                                    Text(searchSnippetText(result.snippet, isFromMe: result.isFromMe))
+                                        .font(.callout)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 5)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 160)
+            } else if !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+                Divider()
+                Text("No matches.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+            }
+        }
+    }
+
+    private func runSearch() async {
+        let trimmed = searchQuery.trimmingCharacters(in: .whitespaces)
+        guard model.isReady, !trimmed.isEmpty else {
+            searchResults = []
+            searchTotal = 0
+            return
+        }
+        // Debounce keystrokes; the task is cancelled and restarted on each change.
+        try? await Task.sleep(for: .milliseconds(180))
+        guard !Task.isCancelled else { return }
+
+        var options = SearchIndex.Options()
+        options.chats = model.chatRefs
+        options.sort = .newest
+        options.limit = 60
+        let index = appState.searchIndex
+        let response = await Task.detached {
+            try? index.search(trimmed, options: options)
+        }.value
+        guard !Task.isCancelled else { return }
+        searchResults = response?.results ?? []
+        searchTotal = response?.total ?? 0
     }
 
     private var kpiBand: some View {
@@ -246,11 +382,18 @@ struct ConversationReaderView: View {
     }
 
     /// Move the scrubber and jump the transcript to a date, clamped to the range.
-    private func scrub(to date: Date) {
+    private func scrub(to date: Date, highlight: String? = nil, terms: [String] = []) {
         let t = min(max(date.timeIntervalSinceReferenceDate, scrubLo), scrubHi)
         scrubPosition = t
         let clamped = Date(timeIntervalSinceReferenceDate: t)
-        Task { await model.jump(to: clamped) }
+        Task { await model.jump(to: clamped, highlight: highlight, terms: terms) }
+    }
+
+    /// The words of the in-conversation query, for marking them in the bubble.
+    private var queryTerms: [String] {
+        searchQuery.replacingOccurrences(of: "\"", with: " ")
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
     }
 
     private func durationLabel(from: Date, to: Date) -> String {
@@ -274,8 +417,12 @@ struct ConversationReaderView: View {
                     if index == 0 || !Calendar.current.isDate(msg.date, inSameDayAs: model.messages[index - 1].date) {
                         DaySeparator(date: msg.date)
                     }
-                    MessageBubble(message: msg)
-                        .id(msg.id)
+                    MessageBubble(
+                        message: msg,
+                        highlight: msg.id == model.highlightID,
+                        highlightTerms: msg.id == model.textHighlightID ? model.highlightTerms : []
+                    )
+                    .id(msg.id)
                 }
                 if model.hasNewer {
                     ProgressView()
@@ -338,18 +485,31 @@ private struct DaySeparator: View {
 
 private struct MessageBubble: View {
     let message: ChatMessage
+    /// The message a search landed on: rings it in sun, which fades as the
+    /// highlight clears.
+    var highlight = false
+    /// Search terms marked inside the bubble text; these persist after the
+    /// ring fades so the mention stays findable.
+    var highlightTerms: [String] = []
 
     var body: some View {
         HStack {
             if message.isFromMe { Spacer(minLength: 40) }
             VStack(alignment: message.isFromMe ? .trailing : .leading, spacing: 2) {
-                Text(message.text)
+                Text(bubbleText)
                     .textSelection(.enabled)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(message.isFromMe ? Color.brandBlue : Color.bubbleTan)
                     .foregroundStyle(message.isFromMe ? Color.white : Color.ink)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14)
+                            .strokeBorder(Color.sun, lineWidth: 2.5)
+                            .opacity(highlight ? 1 : 0)
+                    }
+                    .shadow(color: Color.sun.opacity(highlight ? 0.85 : 0), radius: 9)
+                    .animation(.easeOut(duration: 0.7), value: highlight)
                 Text(message.date.formatted(.dateTime.hour().minute()))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -357,5 +517,53 @@ private struct MessageBubble: View {
             if !message.isFromMe { Spacer(minLength: 40) }
         }
         .frame(maxWidth: .infinity, alignment: message.isFromMe ? .trailing : .leading)
+    }
+
+    /// The bubble text with every occurrence of the search terms marked in sun,
+    /// matching case- and diacritic-insensitively (same spirit as the index).
+    private var bubbleText: AttributedString {
+        let text = message.text
+        guard !highlightTerms.isEmpty else { return AttributedString(text) }
+
+        var ranges: [Range<String.Index>] = []
+        for term in highlightTerms where !term.isEmpty {
+            var start = text.startIndex
+            while start < text.endIndex,
+                  let r = text.range(of: term, options: [.caseInsensitive, .diacriticInsensitive],
+                                     range: start..<text.endIndex) {
+                ranges.append(r)
+                start = r.upperBound
+            }
+        }
+        guard !ranges.isEmpty else { return AttributedString(text) }
+
+        // Merge overlaps (e.g. terms "birth" and "birthday") into clean runs.
+        ranges.sort { $0.lowerBound < $1.lowerBound }
+        var merged: [Range<String.Index>] = [ranges[0]]
+        for r in ranges.dropFirst() {
+            let last = merged[merged.count - 1]
+            if r.lowerBound <= last.upperBound {
+                merged[merged.count - 1] = last.lowerBound..<max(last.upperBound, r.upperBound)
+            } else {
+                merged.append(r)
+            }
+        }
+
+        var attr = AttributedString()
+        var cursor = text.startIndex
+        for r in merged {
+            if cursor < r.lowerBound {
+                attr += AttributedString(String(text[cursor..<r.lowerBound]))
+            }
+            var piece = AttributedString(String(text[r]))
+            piece.backgroundColor = Color.sun
+            piece.foregroundColor = Color.ink
+            attr += piece
+            cursor = r.upperBound
+        }
+        if cursor < text.endIndex {
+            attr += AttributedString(String(text[cursor...]))
+        }
+        return attr
     }
 }

@@ -3,6 +3,7 @@ import Charts
 
 enum Tab: String, CaseIterable {
     case allTime = "All Time"
+    case search = "Search"
     case reconnect = "Reconnect"
     case timeMachine = "Time Machine"
 }
@@ -52,6 +53,7 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var headerWidth: CGFloat = 0
     @State private var tabsWidth: CGFloat = 0
+    @State private var sortOrder = [KeyPathComparator(\Conversation.score, order: .reverse)]
 
     private static let searchFieldWidth: CGFloat = 220
 
@@ -102,7 +104,9 @@ struct ContentView: View {
     }
 
     private var filteredReconnect: [Conversation] {
-        appState.reconnectConversations(maxDays: selectedRange.rawValue).filter(matchesSearch)
+        appState.reconnectConversations(maxDays: selectedRange.rawValue)
+            .filter(matchesSearch)
+            .sorted(using: sortOrder)
     }
 
     private var isSearching: Bool {
@@ -129,8 +133,10 @@ struct ContentView: View {
                             tabPicker
                                 .frame(maxWidth: .infinity, alignment: .center)
                             HStack(spacing: 8) {
-                                searchField
-                                    .frame(width: Self.searchFieldWidth)
+                                if selectedTab != .search {
+                                    searchField
+                                        .frame(width: Self.searchFieldWidth)
+                                }
                                 settingsButton
                             }
                             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -139,8 +145,10 @@ struct ContentView: View {
                         HStack(spacing: 12) {
                             tabPicker
                             Spacer(minLength: 0)
-                            searchField
-                                .frame(maxWidth: Self.searchFieldWidth)
+                            if selectedTab != .search {
+                                searchField
+                                    .frame(maxWidth: Self.searchFieldWidth)
+                            }
                             settingsButton
                         }
                     }
@@ -168,7 +176,7 @@ struct ContentView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                case .allTime:
+                case .allTime, .search:
                     EmptyView()
                 }
             }
@@ -219,6 +227,16 @@ struct ContentView: View {
                         } else {
                             timelineView
                         }
+                    case .search:
+                        SearchView(
+                            appState: appState,
+                            onOpen: { key, date, messageID, terms in
+                                openReader(key: key, anchorDate: date, anchorMessageID: messageID, highlightTerms: terms)
+                            },
+                            onOpenGroup: { chatID, name, date, messageID, terms in
+                                openGroupReader(chatID: chatID, name: name, anchorDate: date, anchorMessageID: messageID, highlightTerms: terms)
+                            }
+                        )
                     }
                 }
             }
@@ -231,20 +249,21 @@ struct ContentView: View {
         .onChange(of: appState.timelineMonths) {
             monthPosition = Double(max(appState.timelineMonths.count - 1, 0))
         }
+        .onChange(of: appState.searchFocusRequest) { selectedTab = .search }
         .sheet(item: $readerTarget) { target in
             ConversationReaderView(target: target, appState: appState)
                 .frame(minWidth: 480, idealWidth: 560, minHeight: 560, idealHeight: 680)
         }
     }
 
-    /// Opens the person view. In Time Machine we land on the selected month;
-    /// elsewhere we land on their most recent message.
-    private func openReader(key: String, monthKey: String? = nil) {
+    /// Opens the person view. In Time Machine we land on the selected month,
+    /// from Search on the matched message; elsewhere on their most recent message.
+    private func openReader(key: String, monthKey: String? = nil, anchorDate: Date? = nil, anchorMessageID: String? = nil, highlightTerms: [String] = []) {
         let convos = appState.resolvedConversations.filter { $0.mergeKey == key }
         guard let busiest = convos.max(by: { $0.totalMessages < $1.totalMessages }) else { return }
         let first = convos.map(\.firstMessageDate).min() ?? .now
         let last = convos.map(\.lastMessageDate).max() ?? .now
-        let anchor = monthKey.flatMap(Self.monthKeyParser.date(from:)) ?? last
+        let anchor = anchorDate ?? monthKey.flatMap(Self.monthKeyParser.date(from:)) ?? last
         readerTarget = ReaderTarget(
             key: key,
             name: busiest.resolvedName,
@@ -252,12 +271,41 @@ struct ContentView: View {
             imessageHandleIDs: convos.filter { $0.source == .iMessage }.map(\.rowID),
             whatsAppChatIDs: convos.filter { $0.source == .whatsApp }.map(\.rowID),
             anchorDate: anchor,
+            anchorMessageID: anchorMessageID,
+            highlightTerms: highlightTerms,
             firstDate: first,
             lastDate: last,
             totalMessages: convos.reduce(0) { $0 + $1.totalMessages },
             sentMessages: convos.reduce(0) { $0 + $1.sentMessages },
             receivedMessages: convos.reduce(0) { $0 + $1.receivedMessages }
         )
+    }
+
+    /// Opens a group chat from Search. Group chats aren't part of the
+    /// person-level aggregates, so its totals are read on the spot.
+    private func openGroupReader(chatID: Int64, name: String, anchorDate: Date, anchorMessageID: String, highlightTerms: [String] = []) {
+        Task {
+            let stats = await Task.detached {
+                try? MessageStore().fetchChatStats(chatID: chatID)
+            }.value
+            guard let stats else { return }
+            readerTarget = ReaderTarget(
+                key: "chat:\(chatID)",
+                name: name,
+                handle: "",
+                imessageHandleIDs: [],
+                imessageChatIDs: [chatID],
+                whatsAppChatIDs: [],
+                anchorDate: anchorDate,
+                anchorMessageID: anchorMessageID,
+                highlightTerms: highlightTerms,
+                firstDate: stats.first,
+                lastDate: stats.last,
+                totalMessages: stats.total,
+                sentMessages: stats.sent,
+                receivedMessages: stats.total - stats.sent
+            )
+        }
     }
 
     private var currentMonthIndex: Int {
@@ -384,27 +432,27 @@ struct ContentView: View {
     }
 
     private var reconnectTable: some View {
-        Table(filteredReconnect) {
-            TableColumn("Name") { convo in
+        Table(filteredReconnect, sortOrder: $sortOrder) {
+            TableColumn("Name", value: \.resolvedName, comparator: .localizedStandard) { convo in
                 Text(convo.resolvedName)
                     .contentShape(Rectangle())
                     .onTapGesture { openReader(key: convo.mergeKey) }
             }
             .width(min: 120)
 
-            TableColumn("Last Message") { convo in
+            TableColumn("Last Message", value: \.daysSinceLastMessage) { convo in
                 Text("\(convo.daysSinceLastMessage)d ago")
                     .foregroundStyle(.secondary)
             }
             .width(min: 70, ideal: 70, max: 90)
 
-            TableColumn("Messages") { convo in
+            TableColumn("Messages", value: \.totalMessages) { convo in
                 Text("\(convo.totalMessages)")
                     .monospacedDigit()
             }
             .width(min: 60, ideal: 60, max: 75)
 
-            TableColumn("Score") { convo in
+            TableColumn("Score", value: \.score) { convo in
                 ScoreCell(score: convo.score, breakdown: convo.scoreBreakdown)
             }
             .width(min: 40, ideal: 40, max: 50)

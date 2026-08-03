@@ -237,6 +237,39 @@ final class MessageStore {
         return chatIDs
     }
 
+    /// Totals for a single chat — what `fetchConversations` computes per person,
+    /// for a group chat opened from Search. nil when the chat has no messages.
+    func fetchChatStats(chatID: Int64) throws -> (total: Int, sent: Int, first: Date, last: Date)? {
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            let msg = db.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "Unknown error"
+            sqlite3_close(db)
+            throw MessageStoreError.openFailed(msg)
+        }
+        defer { sqlite3_close(db) }
+
+        let sql = """
+            SELECT COUNT(*), SUM(m.is_from_me), MIN(m.date), MAX(m.date)
+            FROM chat_message_join cmj
+            INNER JOIN message m ON m.rowid = cmj.message_id
+            WHERE cmj.chat_id = ?
+            """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw MessageStoreError.queryFailed(String(cString: sqlite3_errmsg(db!)))
+        }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int64(stmt, 1, chatID)
+
+        guard sqlite3_step(stmt) == SQLITE_ROW, sqlite3_column_int(stmt, 0) > 0 else { return nil }
+        return (
+            Int(sqlite3_column_int(stmt, 0)),
+            Int(sqlite3_column_int(stmt, 1)),
+            Self.dateFromCoreData(nanoseconds: sqlite3_column_int64(stmt, 2)),
+            Self.dateFromCoreData(nanoseconds: sqlite3_column_int64(stmt, 3))
+        )
+    }
+
     /// One keyset page of messages in a set of chats, in one direction.
     /// Pass `after` to page forward (ascending), `before` to page backward
     /// (returned ascending). To jump to a date, page forward from
@@ -321,7 +354,7 @@ final class MessageStore {
     /// `attributedBody` typedstream blob on newer ones (~99.9% of this DB).
     /// `NSUnarchiver` is deprecated but is the only thing that decodes the classic
     /// typedstream format; isolated here so it can be swapped for a hand parser.
-    private static func decodeBody(text: String?, blob: Data?, hasAttachment: Bool) -> String {
+    static func decodeBody(text: String?, blob: Data?, hasAttachment: Bool) -> String {
         var s = text ?? ""
         if s.isEmpty, let blob,
            let attr = try? NSUnarchiver.unarchiveObject(with: blob) as? NSAttributedString {
@@ -370,6 +403,53 @@ final class MessageStore {
             dayCounts[String(cString: dayC)] = Int(sqlite3_column_int(stmt, 1))
         }
         return dayCounts
+    }
+
+    /// Every chat's identity, for mapping search hits (which carry a chat_id)
+    /// back to a person or group.
+    struct ChatInfo {
+        let chatID: Int64
+        let handleID: Int64?      // the 1:1 partner's handle rowid; nil for groups
+        let displayName: String?  // group name, when one is set
+        let isGroup: Bool
+    }
+
+    func fetchChatInfos() throws -> [ChatInfo] {
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            let msg = db.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "Unknown error"
+            sqlite3_close(db)
+            throw MessageStoreError.openFailed(msg)
+        }
+        defer { sqlite3_close(db) }
+
+        let sql = """
+            SELECT c.rowid,
+                   c.display_name,
+                   CASE WHEN c.chat_identifier LIKE 'chat%' THEN 1 ELSE 0 END,
+                   (SELECT COUNT(*) FROM chat_handle_join chj WHERE chj.chat_id = c.rowid),
+                   (SELECT chj.handle_id FROM chat_handle_join chj WHERE chj.chat_id = c.rowid LIMIT 1)
+            FROM chat c
+            """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw MessageStoreError.queryFailed(String(cString: sqlite3_errmsg(db!)))
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var infos: [ChatInfo] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let name = Self.personID(stmt, 1)
+            let isGroup = sqlite3_column_int(stmt, 2) == 1 || sqlite3_column_int(stmt, 3) > 1
+            let handleID = sqlite3_column_type(stmt, 4) == SQLITE_NULL ? nil : sqlite3_column_int64(stmt, 4)
+            infos.append(ChatInfo(
+                chatID: sqlite3_column_int64(stmt, 0),
+                handleID: isGroup ? nil : handleID,
+                displayName: name,
+                isGroup: isGroup
+            ))
+        }
+        return infos
     }
 
     /// Nanoseconds since 2001-01-01 for a Date — the inverse of `dateFromCoreData`.

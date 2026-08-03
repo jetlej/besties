@@ -11,7 +11,8 @@ import SQLite3
 /// (vs chat.db's nanoseconds). ZMESSAGETYPE 10 is system notices (security
 /// code changes etc.) with no text; everything else counts as a message.
 final class WhatsAppStore {
-    private let dbPath: String = {
+    /// Shared with SearchIndex, which reads the same file directly.
+    static let dbPath: String = {
         NSHomeDirectory() + "/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite"
     }()
 
@@ -30,13 +31,13 @@ final class WhatsAppStore {
 
     /// Whether the WhatsApp desktop app has a message store on this Mac.
     var isInstalled: Bool {
-        FileManager.default.fileExists(atPath: dbPath)
+        FileManager.default.fileExists(atPath: Self.dbPath)
     }
 
     private func open() throws -> OpaquePointer? {
-        guard FileManager.default.fileExists(atPath: dbPath) else { return nil }
+        guard FileManager.default.fileExists(atPath: Self.dbPath) else { return nil }
         var db: OpaquePointer?
-        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+        guard sqlite3_open_v2(Self.dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
             let msg = db.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "Unknown error"
             sqlite3_close(db)
             throw MessageStoreError.openFailed(msg)
