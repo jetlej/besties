@@ -34,6 +34,8 @@ cat <<HEAD
 <meta name="color-scheme" content="light">
 <link rel="icon" type="image/png" href="/icon.png">
 <link rel="apple-touch-icon" href="/icon.png">
+<script>window.bt={q:[],track:function(e,p){window.bt.q.push([e,p])}}</script>
+<script defer src="/t.js"></script>
 </head>
 <body>
 HEAD

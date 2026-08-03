@@ -8,6 +8,8 @@
 <meta name="color-scheme" content="light">
 <link rel="icon" type="image/png" href="/icon.png">
 <link rel="apple-touch-icon" href="/icon.png">
+<script>window.bt={q:[],track:function(e,p){window.bt.q.push([e,p])}}</script>
+<script defer src="/t.js"></script>
 <style>
   :root {
     --paper: #FDF8EE; --ink: #211E1A; --muted: #6E675E; --line: #EBE3D4;
@@ -75,9 +77,16 @@
   const btn = document.getElementById("dlBtn");
   if (/^cs_(test|live)_[A-Za-z0-9]+$/.test(sid)) {
     btn.href = "/api/download?session_id=" + encodeURIComponent(sid);
+    // Track each purchase once, not on every reload of this page.
+    try {
+      const k = "bt_pc_" + sid;
+      if (!localStorage.getItem(k)) { localStorage.setItem(k, "1"); bt.track("purchase_complete"); }
+    } catch { bt.track("purchase_complete"); }
+    btn.addEventListener("click", () => bt.track("download_click"));
   } else {
     btn.style.display = "none";
     document.getElementById("err").style.display = "block";
+    bt.track("download_error");
   }
 </script>
 </body>
