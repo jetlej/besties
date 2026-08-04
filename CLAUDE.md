@@ -16,10 +16,14 @@ Product name is **Besties** (site: https://besties.gg). Bundle id `com.besties.a
 - Vercel production env vars: `STRIPE_SECRET_KEY` (live), `DOWNLOAD_PATH` (current secret DMG path). When shipping a new DMG: put it at `site/dl/Besties-$(openssl rand -hex 8).dmg` (delete the old one), update `DOWNLOAD_PATH` via `vercel env rm/add`, redeploy.
 - Stripe keys are never committed; ask the user if a key is needed.
 
-## Releasing the app
+## Releasing a new app version
 
-- `./release.sh <marketing-version> [profile]` (e.g. `./release.sh 1.1`) — builds Release, signs (Developer ID, team 34HCA7L7PV, source entitlements — never the build .xcent), notarizes via keychain profile `SPEED_NOTARY`, staples, produces `Besties.zip` at repo root, then stages it in the Sparkle updates dir under `site/` and regenerates the Sparkle appcast (deploy the site afterwards to publish the update).
-- DMG: stage stapled `Besties.app` + `/Applications` symlink, add `.background/bg.png` + `.VolumeIcon.icns`, set Finder layout via osascript, convert UDZO, codesign, notarize + staple the DMG itself. (Past scripts/assets live in the session scratchpad; the bg is the tan "Drag to install" art.)
+1. Write `docs/release-notes/<version>.html` first — an HTML fragment (no doctype/body) shown in Sparkle's update prompt. `release.sh` warns and continues without it, but then the update ships with an empty "what's new" pane.
+2. `./release.sh <major.minor[.patch]> [profile]` (e.g. `./release.sh 1.3`) — version needs ≥2 components, each ≤ 99 (build number = major·10000 + minor·100 + patch; Sparkle compares it, so it must always increase — the static versions in the pbxproj are overridden at build time). The script: builds Release, deep-signs Sparkle's nested helpers then the app (Developer ID, team 34HCA7L7PV, source entitlements — never the build .xcent), notarizes via keychain profile `SPEED_NOTARY`, staples, produces `Besties.zip` at repo root, stages the zip + notes into `site/u-a0941b9884e8fcb0/` (gitignored) and regenerates `appcast.xml` there — EdDSA-signed with the private key in the login Keychain (backup in 1Password; if that key is lost, shipped apps can never update again, so releases must run on this machine). Delta updates are generated automatically; `--auto-prune-update-files` cleans out superseded zips.
+3. Deploy the site (see above) — that publishes the update. Existing users get it via the app's "Check for Updates…" menu item or Sparkle's daily background check.
+4. New-buyer DMG — only needed when fresh installs should start on the new version (existing users auto-update regardless): mount the current `site/dl/*.dmg` and copy its `.DS_Store` + `.background/` into a staging dir (they carry the Finder layout and the tan "Drag to install" art — no osascript needed, and there is no `.VolumeIcon.icns`), add an `/Applications` symlink + the new stapled `Besties.app` unzipped from `Besties.zip`, then `hdiutil create -volname Besties -fs "HFS+" -srcfolder <stage> -format UDZO`, codesign the DMG, notarize + staple the DMG itself, and follow the `DOWNLOAD_PATH` rotation in "Purchase / download flow".
+
+- Sparkle config lives in `Besties/Besties/Info.plist` (`SUFeedURL`, `SUPublicEDKey` — merged into the generated Info.plist at build). Sparkle is pinned via the committed `Package.resolved`.
 - `Besties.zip` / `Besties.dmg` at repo root are build artifacts — never commit them.
 
 ## Design
