@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import Combine
+import Sparkle
 
 /// The product name, read from the bundle so PRODUCT_NAME in the Xcode
 /// project is the single place the app is ever renamed.
@@ -18,6 +20,12 @@ extension Color {
 @main
 struct BestiesApp: App {
     @State private var appState = AppState()
+
+    /// Sparkle. One controller for the whole app; starting the updater here
+    /// turns on the daily background check for new versions.
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
+    )
 
     init() {
         if NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "").count > 1 {
@@ -51,6 +59,9 @@ struct BestiesApp: App {
         }
         .defaultSize(width: 800, height: (NSScreen.main?.visibleFrame.height ?? 960) - 48)
         .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updaterController: updaterController)
+            }
             CommandGroup(after: .textEditing) {
                 Button("Find") { appState.searchFocusRequest += 1 }
                     .keyboardShortcut("f", modifiers: .command)
@@ -76,6 +87,32 @@ struct BestiesApp: App {
                            width: 800, height: visible.height - margin * 2)
         window.setFrame(frame, display: true)
         UserDefaults.standard.set(true, forKey: key)
+    }
+}
+
+/// Sparkle's `canCheckForUpdates` is KVO-only, so it needs a small
+/// ObservableObject bridge to drive the menu item's enabled state (this is the
+/// SwiftUI pattern from Sparkle's documentation).
+private final class UpdaterState: ObservableObject {
+    @Published var canCheckForUpdates = false
+
+    init(updater: SPUUpdater) {
+        updater.publisher(for: \.canCheckForUpdates).assign(to: &$canCheckForUpdates)
+    }
+}
+
+private struct CheckForUpdatesView: View {
+    private let updaterController: SPUStandardUpdaterController
+    @StateObject private var state: UpdaterState
+
+    init(updaterController: SPUStandardUpdaterController) {
+        self.updaterController = updaterController
+        _state = StateObject(wrappedValue: UpdaterState(updater: updaterController.updater))
+    }
+
+    var body: some View {
+        Button("Check for Updates…") { updaterController.checkForUpdates(nil) }
+            .disabled(!state.canCheckForUpdates)
     }
 }
 

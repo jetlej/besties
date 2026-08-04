@@ -35,7 +35,7 @@ Everything runs **100% locally** — nothing ever leaves your Mac. There's no se
 
 ## Share it
 
-Run `./release.sh` to build a signed + notarized `Besties.zip` you can send to anyone — it installs with no security warning. (Reuses the existing notary credential; override the keychain profile with `./release.sh <profile>`.)
+Run `./release.sh 1.1` to build a signed + notarized `Besties.zip` you can send to anyone — it installs with no security warning. It also stages that version for Sparkle auto-updates. (Reuses the existing notary credential; override the keychain profile with `./release.sh 1.1 <profile>`.)
 
 ---
 

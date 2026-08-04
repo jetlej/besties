@@ -2,8 +2,8 @@
 build/
 DerivedData/
 *.xcuserdata
-*.xcworkspace
 xcuserdata/
+IDEWorkspaceChecks.plist
 *.pbxuser
 *.mode1v3
 *.mode2v3

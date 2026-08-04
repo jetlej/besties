@@ -18,7 +18,7 @@ Product name is **Besties** (site: https://besties.gg). Bundle id `com.besties.a
 
 ## Releasing the app
 
-- `./release.sh` — builds Release, signs (Developer ID, team 34HCA7L7PV, source entitlements — never the build .xcent), notarizes via keychain profile `SPEED_NOTARY`, staples, produces `Besties.zip` at repo root.
+- `./release.sh <marketing-version> [profile]` (e.g. `./release.sh 1.1`) — builds Release, signs (Developer ID, team 34HCA7L7PV, source entitlements — never the build .xcent), notarizes via keychain profile `SPEED_NOTARY`, staples, produces `Besties.zip` at repo root, then stages it in the Sparkle updates dir under `site/` and regenerates the Sparkle appcast (deploy the site afterwards to publish the update).
 - DMG: stage stapled `Besties.app` + `/Applications` symlink, add `.background/bg.png` + `.VolumeIcon.icns`, set Finder layout via osascript, convert UDZO, codesign, notarize + staple the DMG itself. (Past scripts/assets live in the session scratchpad; the bg is the tan "Drag to install" art.)
 - `Besties.zip` / `Besties.dmg` at repo root are build artifacts — never commit them.
 
