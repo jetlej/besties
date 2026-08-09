@@ -42,6 +42,28 @@
       track: function (event, props) {
         window.posthog.capture(event, props);
       }
+    },
+
+    /* ---- Reddit Pixel: ad conversion tracking ----
+     * Only the funnel events in EVENTS are forwarded to Reddit; everything
+     * else (scroll depth, FAQ opens, …) stays PostHog-only. Copy this shape
+     * for Meta/TikTok/etc. — snippet + id in init(), network-specific event
+     * names in EVENTS. */
+    {
+      EVENTS: {
+        checkout_start:    ["AddToCart", { value: 11, currency: "USD" }],
+        purchase_complete: ["Purchase",  { value: 11, currency: "USD", itemCount: 1 }]
+      },
+      init: function () {
+        /* Official Reddit pixel loader snippet */
+        !function(w,d){if(!w.rdt){var p=w.rdt=function(){p.sendEvent?p.sendEvent.apply(p,arguments):p.callQueue.push(arguments)};p.callQueue=[];var t=d.createElement("script");t.src="https://www.redditstatic.com/ads/pixel.js";t.async=!0;var s=d.getElementsByTagName("script")[0];s.parentNode.insertBefore(t,s)}}(window,document);
+        window.rdt("init", "a2_jhid4j1rgdlj");
+        window.rdt("track", "PageVisit");
+      },
+      track: function (event, props) {
+        var m = this.EVENTS[event];
+        if (m) window.rdt("track", m[0], m[1]);
+      }
     }
 
   ];
