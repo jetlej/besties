@@ -61,9 +61,10 @@
       },
       init: function () {
         try {
-          if (!localStorage.getItem("bt_uid")) {
-            localStorage.setItem("bt_uid",
-              Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
+          /* Reddit requires an RFC-4122 UUID; regenerate anything else */
+          var uid = localStorage.getItem("bt_uid");
+          if ((!uid || uid.length !== 36) && window.crypto && crypto.randomUUID) {
+            localStorage.setItem("bt_uid", crypto.randomUUID());
           }
           var cid = new URLSearchParams(location.search).get("rdt_cid");
           if (cid) localStorage.setItem("bt_rdt_cid", cid);

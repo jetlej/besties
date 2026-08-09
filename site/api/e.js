@@ -16,7 +16,8 @@ module.exports = async (req, res) => {
     user: {
       ip_address: String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || undefined,
       user_agent: req.headers["user-agent"],
-      uuid: typeof b.id === "string" && b.id ? b.id.slice(0, 64) : undefined,
+      uuid: typeof b.id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(b.id)
+        ? b.id : undefined,
       screen_dimensions:
         b.sw && b.sh ? { width: Number(b.sw), height: Number(b.sh) } : undefined
     }
