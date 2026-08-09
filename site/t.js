@@ -62,7 +62,15 @@
       },
       track: function (event, props) {
         var m = this.EVENTS[event];
-        if (m) window.rdt("track", m[0], m[1]);
+        if (!m) return;
+        var data = Object.assign({}, m[1]);
+        if (event === "purchase_complete") {
+          /* Stripe session id → conversionId so Reddit dedupes retries
+           * even where the thanks page's localStorage guard can't. */
+          var sid = new URLSearchParams(location.search).get("session_id");
+          if (sid) data.conversionId = sid;
+        }
+        window.rdt("track", m[0], data);
       }
     }
 
