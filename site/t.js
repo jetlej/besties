@@ -44,33 +44,47 @@
       }
     },
 
-    /* ---- Reddit Pixel: ad conversion tracking ----
-     * Only the funnel events in EVENTS are forwarded to Reddit; everything
-     * else (scroll depth, FAQ opens, …) stays PostHog-only. Copy this shape
-     * for Meta/TikTok/etc. — snippet + id in init(), network-specific event
-     * names in EVENTS. */
+    /* ---- Reddit Ads: server-side conversions, first-party only ----
+     * No Reddit script, no Reddit hostname — nothing for ad blockers to
+     * match. Funnel events beacon to our own /api/e, which forwards them
+     * to Reddit's Conversions API with IP + user agent for matching.
+     * Attribution comes from the rdt_cid click id Reddit appends to ad
+     * URLs, stashed in localStorage so it survives the Stripe round-trip
+     * to the thanks page. Only the events in EVENTS are forwarded;
+     * everything else (scroll depth, FAQ opens, …) stays PostHog-only.
+     * Copy this shape for Meta/TikTok later — new endpoint, new map. */
     {
       EVENTS: {
-        checkout_start:    ["AddToCart", { value: 11, currency: "USD" }],
-        purchase_complete: ["Purchase",  { value: 11, currency: "USD", itemCount: 1 }]
+        pageview:          "PageVisit",
+        checkout_start:    "AddToCart",
+        purchase_complete: "Purchase"
       },
       init: function () {
-        /* Official Reddit pixel loader snippet */
-        !function(w,d){if(!w.rdt){var p=w.rdt=function(){p.sendEvent?p.sendEvent.apply(p,arguments):p.callQueue.push(arguments)};p.callQueue=[];var t=d.createElement("script");t.src="https://www.redditstatic.com/ads/pixel.js";t.async=!0;var s=d.getElementsByTagName("script")[0];s.parentNode.insertBefore(t,s)}}(window,document);
-        window.rdt("init", "a2_jhid4j1rgdlj");
-        window.rdt("track", "PageVisit");
+        try {
+          if (!localStorage.getItem("bt_uid")) {
+            localStorage.setItem("bt_uid",
+              Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
+          }
+          var cid = new URLSearchParams(location.search).get("rdt_cid");
+          if (cid) localStorage.setItem("bt_rdt_cid", cid);
+        } catch (e) {}
+        this.track("pageview");
       },
       track: function (event, props) {
-        var m = this.EVENTS[event];
-        if (!m) return;
-        var data = Object.assign({}, m[1]);
+        var type = this.EVENTS[event];
+        if (!type) return;
+        var body = { t: type, sw: screen.width, sh: screen.height };
+        try {
+          body.id = localStorage.getItem("bt_uid");
+          body.cid = localStorage.getItem("bt_rdt_cid");
+        } catch (e) {}
         if (event === "purchase_complete") {
-          /* Stripe session id → conversionId so Reddit dedupes retries
+          /* Stripe session id → conversion_id so Reddit dedupes retries
            * even where the thanks page's localStorage guard can't. */
-          var sid = new URLSearchParams(location.search).get("session_id");
-          if (sid) data.conversionId = sid;
+          body.conv = new URLSearchParams(location.search).get("session_id");
         }
-        window.rdt("track", m[0], data);
+        navigator.sendBeacon("/api/e",
+          new Blob([JSON.stringify(body)], { type: "application/json" }));
       }
     }
 
