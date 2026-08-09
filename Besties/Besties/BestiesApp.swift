@@ -54,6 +54,7 @@ struct BestiesApp: App {
                 DispatchQueue.main.async {
                     NSApp.windows.first?.title = appName
                     Self.applyDefaultFrameOnce()
+                    Self.installTitlebarGear()
                 }
             }
         }
@@ -66,11 +67,32 @@ struct BestiesApp: App {
                 Button("Find") { appState.searchFocusRequest += 1 }
                     .keyboardShortcut("f", modifiers: .command)
             }
+            CommandGroup(after: .toolbar) {
+                ForEach(Array(Tab.allCases.enumerated()), id: \.offset) { index, tab in
+                    Button(tab.rawValue) { appState.requestedTab = tab }
+                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                }
+                Divider()
+            }
         }
 
         Settings {
             SettingsView(appState: appState)
         }
+    }
+
+    /// A bare gear in the title bar's trailing corner, next to the traffic
+    /// lights row. An accessory (not a toolbar) keeps the title bar its
+    /// standard height with the window title centered.
+    private static func installTitlebarGear() {
+        guard let window = NSApp.windows.first,
+              window.titlebarAccessoryViewControllers.isEmpty else { return }
+        let host = NSHostingView(rootView: TitlebarGear())
+        host.frame.size = host.fittingSize
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.view = host
+        accessory.layoutAttribute = .trailing
+        window.addTitlebarAccessoryViewController(accessory)
     }
 
     /// Upgrade existing installs to the new default frame — 800pt wide,
@@ -113,6 +135,25 @@ private struct CheckForUpdatesView: View {
     var body: some View {
         Button("Check for Updates…") { updaterController.checkForUpdates(nil) }
             .disabled(!state.canCheckForUpdates)
+    }
+}
+
+/// The titlebar settings button: just the icon, no button chrome.
+private struct TitlebarGear: View {
+    @State private var hovered = false
+
+    var body: some View {
+        Button {
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(hovered ? Color.ink : Color.ink.opacity(0.5))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .help("Settings")
+        .padding(.trailing, 8)
     }
 }
 
@@ -171,6 +212,8 @@ final class AppState {
     /// Bumped by ⌘F: ContentView switches to the Search tab, SearchView focuses
     /// the field (a counter, so repeat presses refocus it).
     var searchFocusRequest = 0
+    /// Set by the ⌘1–⌘4 menu items; ContentView consumes it and resets to nil.
+    var requestedTab: Tab?
     @ObservationIgnored private var searchSyncStarted = false
 
     private let messageStore = MessageStore()

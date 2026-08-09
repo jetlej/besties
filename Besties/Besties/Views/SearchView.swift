@@ -115,7 +115,7 @@ struct SearchView: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("Search every message you've ever sent or received", text: $query)
+            TextField("Type a keyword or phrase…", text: $query)
                 .textFieldStyle(.plain)
                 .font(.title3)
                 .focused($searchFocused)

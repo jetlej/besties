@@ -3,9 +3,89 @@ import Charts
 
 enum Tab: String, CaseIterable {
     case allTime = "All Time"
-    case search = "Search"
-    case reconnect = "Reconnect"
     case timeMachine = "Time Machine"
+    case reconnect = "Reconnect"
+    case search = "Search"
+
+    var systemImage: String {
+        switch self {
+        case .allTime: "trophy.fill"
+        case .timeMachine: "clock.arrow.circlepath"
+        case .reconnect: "bubble.left.and.bubble.right.fill"
+        case .search: "magnifyingglass"
+        }
+    }
+
+    /// One-line description shown inside the tab, under the title.
+    var blurb: String {
+        switch self {
+        case .allTime: "Your lifetime leaderboard"
+        case .timeMachine: "Rewind month by month"
+        case .reconnect: "Who's worth a text"
+        case .search: "Find any message by keyword"
+        }
+    }
+}
+
+/// The full-width tab bar: icon + title with a one-line description inside
+/// each tab, on a flat gray track, sun pill sliding to the selection.
+/// Descriptions drop at narrow widths so the titles never truncate.
+struct TabBar: View {
+    @Binding var selection: Tab
+    var showDescriptions = true
+    @Namespace private var pillNS
+    @State private var hovered: Tab?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Tab.allCases, id: \.self) { tab in
+                Button {
+                    if reduceMotion {
+                        selection = tab
+                    } else {
+                        withAnimation(.spring(duration: 0.28)) { selection = tab }
+                    }
+                } label: {
+                    VStack(spacing: 1) {
+                        HStack(spacing: 5) {
+                            Image(systemName: tab.systemImage)
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(tab.rawValue)
+                                .font(.callout.weight(.semibold))
+                        }
+                        if showDescriptions {
+                            Text(tab.blurb)
+                                .font(.caption2)
+                                .foregroundStyle(Color.ink.opacity(selection == tab ? 0.72 : 0.45))
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 8)
+                    .frame(maxWidth: .infinity)
+                    .foregroundStyle(selection == tab ? Color.ink : Color.ink.opacity(0.55))
+                    .background {
+                        if selection == tab {
+                            RoundedRectangle(cornerRadius: 9)
+                                .fill(Color.sun)
+                                .matchedGeometryEffect(id: "pill", in: pillNS)
+                        } else if hovered == tab {
+                            RoundedRectangle(cornerRadius: 9)
+                                .fill(Color.ink.opacity(0.055))
+                        }
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 9))
+                }
+                .buttonStyle(.plain)
+                .onHover { inside in
+                    if inside { hovered = tab } else if hovered == tab { hovered = nil }
+                }
+            }
+        }
+        .padding(3)
+        .background(Color.ink.opacity(0.065), in: RoundedRectangle(cornerRadius: 12))
+    }
 }
 
 
@@ -52,41 +132,25 @@ struct ContentView: View {
     @State private var readerTarget: ReaderTarget?
     @State private var searchText = ""
     @State private var headerWidth: CGFloat = 0
-    @State private var tabsWidth: CGFloat = 0
     @State private var sortOrder = [KeyPathComparator(\Conversation.score, order: .reverse)]
 
     private static let searchFieldWidth: CGFloat = 220
 
-    /// Whether the centered tab picker leaves room for the search field and
-    /// gear on the trailing side; when it doesn't, the tabs shift to the left edge.
-    private var tabsFitCentered: Bool {
-        headerWidth == 0 || (headerWidth - tabsWidth) / 2 >= Self.searchFieldWidth + 44
-    }
-
-    private var settingsButton: some View {
-        SettingsLink {
-            Image(systemName: "gearshape")
+    /// The people filter, right-aligned directly above whichever list it filters.
+    private var filterRow: some View {
+        HStack {
+            Spacer(minLength: 0)
+            searchField
+                .frame(width: Self.searchFieldWidth)
         }
-        .buttonStyle(.borderless)
-        .help("Settings")
-    }
-
-    private var tabPicker: some View {
-        Picker("", selection: $selectedTab) {
-            ForEach(Tab.allCases, id: \.self) { tab in
-                Text(tab.rawValue).tag(tab)
-            }
-        }
-        .pickerStyle(.segmented)
-        .fixedSize()
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tabsWidth = $0 }
+        .padding(.horizontal, 16)
     }
 
     private var searchField: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
+            Image(systemName: "line.3.horizontal.decrease")
                 .foregroundStyle(.secondary)
-            TextField("Search name or phone number", text: $searchText)
+            TextField("Filter people…", text: $searchText)
                 .textFieldStyle(.plain)
             if !searchText.isEmpty {
                 Button {
@@ -127,58 +191,9 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 8) {
-                Group {
-                    if tabsFitCentered {
-                        ZStack {
-                            tabPicker
-                                .frame(maxWidth: .infinity, alignment: .center)
-                            HStack(spacing: 8) {
-                                if selectedTab != .search {
-                                    searchField
-                                        .frame(width: Self.searchFieldWidth)
-                                }
-                                settingsButton
-                            }
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        }
-                    } else {
-                        HStack(spacing: 12) {
-                            tabPicker
-                            Spacer(minLength: 0)
-                            if selectedTab != .search {
-                                searchField
-                                    .frame(maxWidth: Self.searchFieldWidth)
-                            }
-                            settingsButton
-                        }
-                    }
-                }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { headerWidth = $0 }
+                TabBar(selection: $selectedTab, showDescriptions: headerWidth == 0 || headerWidth >= 560)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { headerWidth = $0 }
 
-                switch selectedTab {
-                case .reconnect:
-                    Text("People you used to talk to all the time — ranked by who's most worth a text.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    HStack(spacing: 6) {
-                        Text("Last Contact:")
-                            .foregroundStyle(.secondary)
-                        Picker("", selection: $selectedRange) {
-                            ForEach(TimeRange.allCases) { range in
-                                Text(range.label).tag(range)
-                            }
-                        }
-                        .fixedSize()
-                    }
-                case .timeMachine:
-                    Text("Drag through your history to see who you were texting, month by month.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                case .allTime, .search:
-                    EmptyView()
-                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -201,12 +216,29 @@ struct ContentView: View {
                 } else {
                     switch selectedTab {
                     case .reconnect:
-                        if filteredReconnect.isEmpty {
-                            Text(isSearching ? "No matches." : "No one to reconnect with right now.")
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        } else {
-                            reconnectTable
+                        VStack(spacing: 8) {
+                            HStack(spacing: 6) {
+                                Text("Last Contact:")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                Picker("", selection: $selectedRange) {
+                                    ForEach(TimeRange.allCases) { range in
+                                        Text(range.label).tag(range)
+                                    }
+                                }
+                                .fixedSize()
+                                Spacer(minLength: 0)
+                                searchField
+                                    .frame(width: Self.searchFieldWidth)
+                            }
+                            .padding(.horizontal, 16)
+                            if filteredReconnect.isEmpty {
+                                Text(isSearching ? "No matches." : "No one to reconnect with right now.")
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else {
+                                reconnectTable
+                            }
                         }
                     case .allTime:
                         if appState.allConversations.isEmpty {
@@ -250,6 +282,12 @@ struct ContentView: View {
             monthPosition = Double(max(appState.timelineMonths.count - 1, 0))
         }
         .onChange(of: appState.searchFocusRequest) { selectedTab = .search }
+        .onChange(of: appState.requestedTab) {
+            if let tab = appState.requestedTab {
+                selectedTab = tab
+                appState.requestedTab = nil
+            }
+        }
         .sheet(item: $readerTarget) { target in
             ConversationReaderView(target: target, appState: appState)
                 .frame(minWidth: 480, idealWidth: 560, minHeight: 560, idealHeight: 680)
@@ -409,6 +447,9 @@ struct ContentView: View {
                     .padding(.horizontal, 16)
                 }
 
+                filterRow
+                    .padding(.bottom, -8)
+
                 if entries.isEmpty && isSearching {
                     Text("No matches.")
                         .foregroundStyle(.secondary)
@@ -434,9 +475,17 @@ struct ContentView: View {
     private var reconnectTable: some View {
         Table(filteredReconnect, sortOrder: $sortOrder) {
             TableColumn("Name", value: \.resolvedName, comparator: .localizedStandard) { convo in
-                Text(convo.resolvedName)
-                    .contentShape(Rectangle())
-                    .onTapGesture { openReader(key: convo.mergeKey) }
+                HStack(spacing: 10) {
+                    AvatarView(
+                        name: convo.resolvedName,
+                        imageData: appState.avatar(forHandle: convo.handle),
+                        color: leaderboardColor,
+                        size: 28
+                    )
+                    Text(convo.resolvedName)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { openReader(key: convo.mergeKey) }
             }
             .width(min: 120)
 
@@ -468,6 +517,9 @@ struct ContentView: View {
             }
             .width(30)
         }
+        .scrollContentBackground(.hidden)
+        .alternatingRowBackgrounds(.disabled)
+        .background(Color.paper)
     }
 
     private var timelineView: some View {
@@ -481,14 +533,6 @@ struct ContentView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
-                    }
-                    HStack {
-                        Spacer()
-                        Toggle(isOn: $showChart) {
-                            Image(systemName: "chart.xyaxis.line")
-                        }
-                        .toggleStyle(.button)
-                        .help("Show podium")
                     }
                 }
                 Slider(
@@ -508,12 +552,8 @@ struct ContentView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
 
-            if showChart {
-                PodiumView(entries: monthTopFive, onOpen: { openReader(key: $0.key, monthKey: selectedMonthKey) })
-                    .animation(.spring(duration: 0.4), value: currentMonthIndex)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
-            }
+            filterRow
+                .padding(.bottom, 8)
 
             if monthConversations.isEmpty {
                 Text(isSearching ? "No matches." : "No conversations this month.")
@@ -761,20 +801,43 @@ struct LeaderboardRow: View {
     let onMessage: () -> Void
     var onOpen: (() -> Void)? = nil
 
+    /// Only the top three are enlarged; every column keeps a constant width so
+    /// the avatars, names, and bars align like a table across all rows.
+    private var avatarSize: CGFloat {
+        switch rank {
+        case 1: 46
+        case 2: 40
+        case 3: 34
+        default: 28
+        }
+    }
+    private var nameFontSize: CGFloat {
+        switch rank {
+        case 1: 15.5
+        case 2: 14.5
+        case 3: 13.5
+        default: 12
+        }
+    }
+    private var barHeight: CGFloat { rank <= 3 ? 26 : 22 }
+
+    /// Fixed column widths, independent of rank.
+    private static let rankColumn: CGFloat = 26
+    private static let avatarColumn: CGFloat = 46
+    private static let nameColumn: CGFloat = 160
+
     var body: some View {
         HStack(spacing: 10) {
             HStack(spacing: 10) {
-                Text("\(rank)")
-                    .font(.callout.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, alignment: .trailing)
-                AvatarView(name: name, imageData: avatar, color: leaderboardColor, size: 28)
+                rankBadge
+                    .frame(width: Self.rankColumn, alignment: .trailing)
+                AvatarView(name: name, imageData: avatar, color: leaderboardColor, size: avatarSize)
+                    .frame(width: Self.avatarColumn)
                 Text(name)
-                    .font(.callout)
+                    .font(.system(size: nameFontSize, weight: rank <= 3 ? .semibold : .regular))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(width: 150, alignment: .leading)
+                    .frame(width: Self.nameColumn, alignment: .leading)
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 5)
@@ -784,7 +847,7 @@ struct LeaderboardRow: View {
                             .frame(width: max(geo.size.width * CGFloat(fraction), 4))
                     }
                 }
-                .frame(height: 22)
+                .frame(height: barHeight)
                 Text("\(count)")
                     .font(.callout)
                     .monospacedDigit()
@@ -798,6 +861,45 @@ struct LeaderboardRow: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
+        }
+    }
+
+    /// Gold/silver/bronze medal for the top three, plain number below.
+    @ViewBuilder
+    private var rankBadge: some View {
+        if let medal = Medal(rank: rank) {
+            let diameter = max(20, avatarSize * 0.48)
+            Text("\(rank)")
+                .font(.system(size: diameter * 0.55, weight: .heavy))
+                .foregroundStyle(medal.text)
+                .frame(width: diameter, height: diameter)
+                .background(
+                    LinearGradient(colors: medal.fill, startPoint: .top, endPoint: .bottom),
+                    in: Circle()
+                )
+                .shadow(color: Color.ink.opacity(0.25), radius: 1, y: 1)
+        } else {
+            Text("\(rank)")
+                .font(.callout.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private struct Medal {
+        let fill: [Color]
+        let text: Color
+
+        init?(rank: Int) {
+            switch rank {
+            case 1: fill = [Color(red: 1, green: 0.85, blue: 0.45), Color(red: 0.91, green: 0.66, blue: 0.13)]
+                    text = Color(red: 0.42, green: 0.30, blue: 0)
+            case 2: fill = [Color(red: 0.91, green: 0.92, blue: 0.93), Color(red: 0.68, green: 0.71, blue: 0.75)]
+                    text = Color(red: 0.29, green: 0.31, blue: 0.35)
+            case 3: fill = [Color(red: 0.89, green: 0.66, blue: 0.47), Color(red: 0.71, green: 0.45, blue: 0.25)]
+                    text = Color(red: 0.37, green: 0.23, blue: 0.11)
+            default: return nil
+            }
         }
     }
 }
