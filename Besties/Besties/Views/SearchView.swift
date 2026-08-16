@@ -136,7 +136,7 @@ struct SearchView: View {
     }
 
     private var filterBar: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        FlowLayout(spacing: 8, lineSpacing: 8) {
             labeled("Person") { personChip }
             labeled("When") {
                 Picker("", selection: $timeFilter) {
@@ -150,6 +150,7 @@ struct SearchView: View {
                         Text(String(year)).tag(TimeFilter.year(year))
                     }
                 }
+                .labelsHidden()
                 .fixedSize()
             }
 
@@ -157,6 +158,7 @@ struct SearchView: View {
                 Picker("", selection: $senderFilter) {
                     ForEach(SenderFilter.allCases) { Text($0.rawValue).tag($0) }
                 }
+                .labelsHidden()
                 .fixedSize()
             }
 
@@ -165,6 +167,7 @@ struct SearchView: View {
                     Picker("", selection: $sourceFilter) {
                         ForEach(SourceFilter.allCases) { Text($0.rawValue).tag($0) }
                     }
+                    .labelsHidden()
                     .fixedSize()
                 }
             }
@@ -177,12 +180,11 @@ struct SearchView: View {
                 .fixedSize()
             }
 
-            Spacer(minLength: 0)
-
             labeled("Sort") {
                 Picker("", selection: $sort) {
                     ForEach(SearchIndex.Sort.allCases) { Text($0.rawValue).tag($0) }
                 }
+                .labelsHidden()
                 .fixedSize()
             }
         }
@@ -231,11 +233,12 @@ struct SearchView: View {
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 3)
+            // Matches the pop-up pickers' height; min width keeps the chip
+            // from collapsing when the row is tight.
+            .frame(minWidth: 130, maxWidth: 200, minHeight: 22, alignment: .leading)
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: 180, alignment: .leading)
         .popover(isPresented: $showPersonPicker, arrowEdge: .bottom) {
             personPicker
         }
@@ -493,6 +496,63 @@ struct SearchView: View {
         return await Task.detached {
             try? index.search(trimmed, options: options)
         }.value
+    }
+}
+
+/// Lays out the filter chips left to right, wrapping onto new lines when the
+/// window is too narrow for one row. Items in a line are bottom-aligned so the
+/// caption-over-control chips line up like the old `.bottom` HStack.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+    var lineSpacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let lines = lines(for: subviews, in: proposal.width ?? .infinity)
+        return CGSize(
+            width: proposal.width ?? lines.map(\.width).max() ?? 0,
+            height: lines.reduce(0) { $0 + $1.height } + lineSpacing * CGFloat(max(lines.count - 1, 0))
+        )
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for line in lines(for: subviews, in: bounds.width) {
+            var x = bounds.minX
+            for index in line.range {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y + line.height - size.height), proposal: .unspecified)
+                x += size.width + spacing
+            }
+            y += line.height + lineSpacing
+        }
+    }
+
+    private struct Line {
+        var range: Range<Int>
+        var width: CGFloat
+        var height: CGFloat
+    }
+
+    private func lines(for subviews: Subviews, in maxWidth: CGFloat) -> [Line] {
+        var lines: [Line] = []
+        var start = 0
+        var x: CGFloat = 0
+        var height: CGFloat = 0
+        for (index, subview) in subviews.enumerated() {
+            let size = subview.sizeThatFits(.unspecified)
+            if index > start && x + size.width > maxWidth {
+                lines.append(Line(range: start..<index, width: x - spacing, height: height))
+                start = index
+                x = 0
+                height = 0
+            }
+            x += size.width + spacing
+            height = max(height, size.height)
+        }
+        if start < subviews.count {
+            lines.append(Line(range: start..<subviews.count, width: x - spacing, height: height))
+        }
+        return lines
     }
 }
 

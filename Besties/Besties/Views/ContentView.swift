@@ -392,12 +392,6 @@ struct ContentView: View {
             .map { (key: $0.key, name: $0.value.name, count: $0.value.count, handle: $0.value.handle, source: $0.value.source) }
     }
 
-    private var monthTopFive: [RaceEntry] {
-        mergedEntries(monthConversations)
-            .prefix(5)
-            .map { RaceEntry(key: $0.key, name: $0.name, count: $0.count, avatar: appState.avatar(forHandle: $0.handle)) }
-    }
-
     private func leaderboardRows(_ entries: [(key: String, name: String, count: Int, handle: String, source: MessageSource)], monthKey: String? = nil) -> some View {
         let maxCount = Double(max(entries.first?.count ?? 1, 1))
         return LazyVStack(spacing: 8) {
@@ -653,14 +647,6 @@ struct AllTimeKPIView: View {
             }
         }
 
-        // Message-level stats (available once global stats finish loading).
-        let g = appState.globalStats
-        let sentTotal = g.sentHourCounts.reduce(0, +)
-        if sentTotal > 0 {
-            let nightOwl = (0..<5).reduce(0) { $0 + g.sentHourCounts[$1] }
-            result.append(("\(Int((Double(nightOwl) / Double(sentTotal) * 100).rounded()))%", "Night-owl share"))
-        }
-
         return result
     }
 
@@ -730,63 +716,6 @@ struct TrendChartView: View {
                     }
                 }
             }
-    }
-}
-
-struct RaceEntry: Identifiable {
-    var id: String { key }
-    let key: String
-    let name: String
-    let count: Int
-    let avatar: Data?
-}
-
-private let personPalette: [Color] = [.purple, .teal, .orange, .pink, .blue, .green, .red, .indigo]
-
-private func personColor(for name: String) -> Color {
-    let hash = name.unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
-    return personPalette[hash % personPalette.count]
-}
-
-struct PodiumView: View {
-    let entries: [RaceEntry]
-    var onOpen: ((RaceEntry) -> Void)? = nil
-
-    private static let sizes: [CGFloat] = [56, 48, 40, 34, 30]
-
-    private var arranged: [(rank: Int, entry: RaceEntry)] {
-        Array(entries.prefix(Self.sizes.count).enumerated()).map { ($0.offset, $0.element) }
-    }
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            ForEach(arranged, id: \.entry.id) { item in
-                VStack(spacing: 3) {
-                    if item.rank == 0 {
-                        Image(systemName: "crown.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.sun)
-                    }
-                    AvatarView(
-                        name: item.entry.name,
-                        imageData: item.entry.avatar,
-                        color: personColor(for: item.entry.name),
-                        size: Self.sizes[item.rank]
-                    )
-                    Text(item.entry.name)
-                        .font(.caption)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Text("\(item.entry.count)")
-                        .font(.caption2)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture { onOpen?(item.entry) }
-            }
-        }
     }
 }
 

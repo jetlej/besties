@@ -55,7 +55,11 @@ struct Conversation: Identifiable {
     }
 
     var resolvedName: String {
-        displayName ?? handle
+        if let displayName { return displayName }
+        // Screenshot mode never lets a raw phone number or email reach the UI.
+        return ContactResolver.isScreenshotMode
+            ? ContactResolver.screenshotPlaceholder(forHandle: handle)
+            : handle
     }
 
     /// Groups conversations that belong to the same person across sources:

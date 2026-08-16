@@ -108,7 +108,7 @@ final class WhatsAppStore {
             // is a fallback; AppState overrides it with the Mac contact card
             // name when the number resolves, keeping merge keys consistent.
             if let partnerName, !partnerName.isEmpty {
-                convo.displayName = partnerName
+                convo.displayName = ContactResolver.screenshotName(partnerName)
             }
             conversations.append(convo)
         }
@@ -164,35 +164,6 @@ final class WhatsAppStore {
             ))
         }
         return byMonth
-    }
-
-    /// Sent-message hour distribution across all chats (groups included),
-    /// mirroring MessageStore.fetchGlobalStats.
-    func fetchSentHourCounts() throws -> [Int] {
-        var counts = Array(repeating: 0, count: 24)
-        guard let db = try open() else { return counts }
-        defer { sqlite3_close(db) }
-
-        let sql = """
-            SELECT CAST(strftime('%H', datetime(m.ZMESSAGEDATE + 978307200, 'unixepoch', 'localtime')) AS INTEGER) AS hr,
-                   COUNT(*)
-            FROM ZWAMESSAGE m
-            WHERE m.ZISFROMME = 1 AND m.ZMESSAGETYPE != 10 AND m.ZMESSAGEDATE > 0
-            GROUP BY hr
-            """
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            throw MessageStoreError.queryFailed(String(cString: sqlite3_errmsg(db)))
-        }
-        defer { sqlite3_finalize(stmt) }
-
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            let hr = Int(sqlite3_column_int(stmt, 0))
-            if (0..<24).contains(hr) {
-                counts[hr] = Int(sqlite3_column_int(stmt, 1))
-            }
-        }
-        return counts
     }
 
     /// One keyset page of messages in a set of chat sessions, in one direction.

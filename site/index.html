@@ -214,15 +214,32 @@
     box-shadow: var(--pop); overflow: hidden; text-align: left;
     display: flex; flex-direction: column;
   }
-  /* mac-style chrome strip (demo stage keeps its own full-bleed screens) */
-  .window:not(.demo-stage)::before {
-    content: ""; flex: none; height: 30px;
+  /* mac-style chrome strip (demo stage keeps its own full-bleed screens;
+     .titled windows draw the same strip themselves, with content in it) */
+  .window:not(.demo-stage):not(.titled)::before { content: ""; }
+  .window:not(.demo-stage):not(.titled)::before,
+  .window.titled > .titlebar {
+    flex: none; height: 30px;
     border-bottom: 2px solid var(--ink);
     background:
       radial-gradient(circle 5.5px at 19px 15px, #FF5F57 99%, transparent),
       radial-gradient(circle 5.5px at 39px 15px, #FEBC2E 99%, transparent),
       radial-gradient(circle 5.5px at 59px 15px, #28C840 99%, transparent),
       color-mix(in srgb, var(--line) 40%, var(--card));
+  }
+  /* the app's title bar: window name centered, bare settings gear trailing */
+  .window.titled > .titlebar {
+    position: relative; display: flex; align-items: center;
+    justify-content: flex-end; padding: 0 9px;
+  }
+  .titlebar .wtitle {
+    position: absolute; left: 0; right: 0; text-align: center;
+    font-size: .72rem; font-weight: 700;
+    color: color-mix(in srgb, var(--ink) 72%, transparent);
+  }
+  .titlebar .gear {
+    position: relative; width: 13px; height: 13px;
+    color: color-mix(in srgb, var(--ink) 50%, transparent);
   }
   .av {
     border-radius: 50%; flex: none;
@@ -252,8 +269,11 @@
 
   .lb { display: flex; flex-direction: column; gap: 9px; }
   .lb .row { display: flex; align-items: center; gap: 9px; font-size: .82rem; }
-  .lb .rk { width: 14px; flex: none; font-size: .74rem; font-weight: 700; color: var(--muted); text-align: right; }
-  .lb .nm { width: 58px; font-weight: 600; flex: none; white-space: nowrap; overflow: hidden; }
+  .lb .rk {
+    width: 22px; flex: none; font-size: .74rem; font-weight: 700; color: var(--muted);
+    display: flex; align-items: center; justify-content: flex-end;
+  }
+  .lb .nm { width: 58px; font-weight: 600; flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .lb .bar { flex: 1; height: 15px; border-radius: 5px; background: color-mix(in srgb, var(--blue) 11%, transparent); position: relative; overflow: hidden; }
   .lb .bar i { position: absolute; inset: 0 auto 0 0; background: var(--blue); border-radius: 5px; }
   .lb .ct { color: var(--muted); font-size: .74rem; width: 42px; text-align: right; flex: none; }
@@ -263,11 +283,124 @@
   }
   .msgbtn svg { width: 12px; height: 12px; }
 
-  .podium { display: flex; align-items: flex-end; justify-content: center; gap: 20px; padding: 8px 0 16px; }
-  .podium .pod { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .podium .pod span { font-size: .76rem; font-weight: 600; }
-  .podium .pod em { font-style: normal; font-size: .7rem; color: var(--muted); }
-  .podium .crown { color: #EAB308; height: 13px; margin-bottom: -1px; }
+  /* top-three treatment: gold/silver/bronze medals + bigger avatars. Every
+     column keeps a fixed width so all rows still line up like a table. */
+  .lb .avc { width: 34px; flex: none; display: flex; align-items: center; justify-content: center; }
+  .lb .medal {
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; font-weight: 800; line-height: 1;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 28%, transparent);
+  }
+  .lb .r1 .medal { width: 20px; height: 20px; font-size: .64rem; background: linear-gradient(#FFD973, #E8A821); color: #6B4D00; }
+  .lb .r2 .medal { width: 18px; height: 18px; font-size: .58rem; background: linear-gradient(#E8EBED, #ADB5BF); color: #4A4F59; }
+  .lb .r3 .medal { width: 16px; height: 16px; font-size: .54rem; background: linear-gradient(#E3A878, #B57340); color: #5E3A1C; }
+  .lb .r1 .nm, .lb .r2 .nm, .lb .r3 .nm { font-weight: 700; }
+  .lb .r1 .nm { font-size: .95rem; }
+  .lb .r2 .nm { font-size: .89rem; }
+  .lb .r3 .nm { font-size: .85rem; }
+  .lb .r1 .bar, .lb .r2 .bar, .lb .r3 .bar { height: 18px; }
+
+  /* tab bar: flat gray track, sun pill on the active tab, icon + title with a
+     one-line description underneath — same four tabs as the app. */
+  .tabhead { flex: none; padding: 10px 14px 2px; }
+  .tabbar {
+    display: flex; gap: 2px; padding: 3px; border-radius: 12px;
+    background: color-mix(in srgb, var(--ink) 6.5%, transparent);
+  }
+  .tabbar .tab {
+    flex: 1 1 0; min-width: 0; overflow: hidden; border-radius: 9px; padding: 6px 6px;
+    color: color-mix(in srgb, var(--ink) 55%, transparent);
+  }
+  .tabbar .tab.on { background: var(--sun); color: var(--ink); }
+  .tabbar .tt {
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    font-weight: 600; font-size: .74rem; line-height: 1.3; white-space: nowrap;
+  }
+  .tabbar .tt svg { width: 12px; height: 12px; flex: none; }
+  .tabbar .tbd {
+    font-size: .55rem; line-height: 1.35; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: color-mix(in srgb, var(--ink) 45%, transparent);
+  }
+  .tabbar .tab.on .tbd { color: color-mix(in srgb, var(--ink) 72%, transparent); }
+  /* opt-out for narrow recreations — the app drops the same line under 560pt.
+     The titles also step down a notch so "Time Machine" fits without clipping. */
+  .tabbar.slim .tbd { display: none; }
+  .tabbar.slim .tt { font-size: .67rem; gap: 4px; }
+  .tabbar.slim .tt svg { width: 11px; height: 11px; }
+  @media (max-width: 640px) {
+    .tabbar .tbd { display: none; }
+    .tabbar .tab { padding: 6px 4px; }
+    .tabbar .tt, .tabbar.slim .tt { font-size: .66rem; gap: 4px; }
+    .tabbar .tt svg, .tabbar.slim .tt svg { width: 11px; height: 11px; }
+  }
+  /* phones: the titles are what carry the meaning, so the icons go first */
+  @media (max-width: 480px) {
+    .tabbar .tab { padding: 6px 3px; }
+    .tabbar .tt, .tabbar.slim .tt { font-size: .58rem; }
+    .tabbar .tt svg, .tabbar.slim .tt svg { display: none; }
+  }
+  /* small phones (≤360): one more step down so "Time Machine" and the year
+     ticks still fit whole rather than clipping. */
+  @media (max-width: 360px) {
+    .tabbar { gap: 1px; padding: 2px; }
+    .tabbar .tab { padding: 6px 1px; }
+    .tabbar .tt, .tabbar.slim .tt { font-size: .5rem; }
+    .ticklabels { font-size: .58rem; }
+  }
+
+  /* a picker chip — the app's small popup buttons on a quaternary fill */
+  .pick {
+    display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    padding: 3px 7px; border-radius: 6px; font-size: .72rem;
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+  }
+  .pick svg { width: 8px; height: 8px; flex: none; opacity: .5; }
+
+  /* the "Filter people…" field, right-aligned directly above a list; on
+     Reconnect the Last Contact range picker sits inline on its left. */
+  .listtools { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: .72rem; }
+  .listtools .lt-lbl { color: var(--muted); white-space: nowrap; }
+  .listtools .filt {
+    margin-left: auto; display: flex; align-items: center; gap: 6px;
+    width: 150px; padding: 4px 8px; border-radius: 8px; color: var(--muted);
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+  }
+  .listtools .filt svg { width: 11px; height: 11px; flex: none; }
+
+  /* search tab: big query field, labeled filter chips, snippets with the
+     matched words highlighted in sun. */
+  .searchhead { flex: none; padding: 10px 16px 12px; border-bottom: 1px solid var(--line); }
+  .qfield {
+    display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-radius: 10px;
+    background: color-mix(in srgb, var(--ink) 4%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  }
+  .qfield svg { width: 15px; height: 15px; flex: none; color: var(--muted); }
+  .qfield .q { flex: 1; min-width: 0; font-size: 1.02rem; }
+  .filterbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 9px 8px; margin-top: 10px; }
+  .filterbar .fl { display: flex; flex-direction: column; gap: 1px; }
+  .filterbar .fl > i {
+    font-style: normal; font-size: .55rem; line-height: 1.2;
+    color: var(--muted); padding-left: 4px;
+  }
+  .filterbar .fl.sort { margin-left: auto; }
+  .sresults { flex: 1; display: flex; flex-direction: column; padding: 8px 8px 12px; }
+  .sresults .cnt { font-size: .66rem; color: var(--muted); padding: 0 12px 4px; }
+  .sres { display: flex; align-items: flex-start; gap: 10px; padding: 7px 12px; }
+  .sres .body { flex: 1; min-width: 0; }
+  .sres .sr-top { display: flex; align-items: baseline; gap: 8px; }
+  .sres .sr-nm { font-weight: 600; font-size: .82rem; }
+  .sres .sr-dt { margin-left: auto; font-size: .66rem; color: var(--muted); flex: none; }
+  .sres .sn { font-size: .78rem; line-height: 1.4; color: var(--muted); }
+  .sres .sn mark {
+    background: color-mix(in srgb, var(--sun) 45%, transparent);
+    color: var(--ink); font-weight: 600; border-radius: 2px;
+  }
+  .showmore {
+    margin: 8px 12px 0; padding: 7px; border-radius: 8px; background: var(--bubble);
+    color: var(--bubble-ink); text-align: center; font-size: .78rem; font-weight: 600;
+  }
 
   .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
   .kpi { background: color-mix(in srgb, var(--line) 38%, var(--card)); border-radius: 10px; padding: 9px 12px; }
@@ -286,9 +419,25 @@
   .rtable .hd span { white-space: nowrap; }
   .rtable .r { border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
   .rtable .r:last-child { border-bottom: none; }
-  .rtable .nm { font-weight: 600; }
+  .rtable .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rtable .dim { color: var(--muted); }
   .rtable .score { color: var(--blue); font-weight: 700; }
+
+  /* Phones: the message button is the first thing to go — dropping it buys the
+     name column enough room to stay on one line. */
+  @media (max-width: 640px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); gap: 7px; }
+    .kpi { padding: 7px 9px; }
+    .kpi b { font-size: .92rem; line-height: 1.2; }
+    .kpi i { display: block; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .rtable .hd, .rtable .r { grid-template-columns: 1fr 64px 48px 38px; gap: 7px; padding: 7px 2px; }
+    .rtable .hd { font-size: .6rem; letter-spacing: .03em; }
+    .rtable .msgbtn { display: none; }
+
+    /* the filter field gives up its fixed width so the row stays on one line */
+    .listtools .filt { width: auto; flex: 1 1 auto; min-width: 0; }
+  }
 
   .pp-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
   .pp-head .name { font-weight: 700; font-size: .95rem; flex: 1; }
@@ -568,8 +717,7 @@
   .demo-stage .lb .row { border-radius: 8px; padding: 2px 6px; transition: background .25s; }
   .demo-stage .lb .row.sel { background: color-mix(in srgb, var(--blue) 13%, transparent); }
   .demo-stage .lb { gap: 5px; }
-  .demo-stage .podium { padding: 2px 0 8px; gap: 14px; }
-  .demo-stage .pod em { margin-bottom: 2px; }
+  .demo-stage .tabhead { padding: 10px 14px 6px; }
   @media (max-width: 640px) {
     /* bubbles wrap taller on narrow screens; anchor them above the scrubber
        and clip the oldest so the scrubber never gets pushed out of the stage */
@@ -637,6 +785,7 @@
   </div>
   <div class="hero-feats">
     <span><span aria-hidden="true">🚫</span> No subscription</span>
+    <span><span aria-hidden="true">🔍</span> Search your entire history, instantly</span>
     <span><span aria-hidden="true">🔒</span> Runs locally, 100% private</span>
   </div>
 
@@ -644,12 +793,57 @@
     <div class="window demo-stage">
 
       <div class="screen on" id="scrTM">
+        <div class="tabhead">
+          <div class="tabbar" aria-hidden="true">
+            <div class="tab">
+              <div class="tt">
+                <svg viewBox="0 0 24 24">
+                  <path d="M7 2h10v7a5 5 0 0 1-10 0V2z" fill="currentColor"/>
+                  <path d="M7 4.5H4v2a4 4 0 0 0 3.2 3.9M17 4.5h3v2a4 4 0 0 1-3.2 3.9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  <path d="M11 14h2v4h3v2H8v-2h3v-4z" fill="currentColor"/>
+                </svg>
+                All Time
+              </div>
+              <div class="tbd">Your lifetime leaderboard</div>
+            </div>
+            <div class="tab on">
+              <div class="tt">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4.6 8.6A8 8 0 1 1 4 12"/>
+                  <path d="M8.8 8.4H4.2V3.8"/>
+                  <path d="M12 7.8V12l3.1 1.9"/>
+                </svg>
+                Time Machine
+              </div>
+              <div class="tbd">Rewind month by month</div>
+            </div>
+            <div class="tab">
+              <div class="tt">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M9 3c-3.9 0-7 2.5-7 5.6 0 1.7.9 3.2 2.4 4.2-.1.9-.5 1.8-1.2 2.5 1.3-.2 2.5-.7 3.4-1.4.7.2 1.5.3 2.4.3 3.9 0 7-2.5 7-5.6S12.9 3 9 3z"/>
+                  <path d="M17.4 8.1c.1.4.1.8.1 1.2 0 3.9-3.8 6.9-8.3 6.9h-.4c1 1.7 3.2 2.9 5.8 2.9.8 0 1.6-.1 2.3-.3.9.7 2 1.2 3.3 1.4-.7-.7-1.1-1.6-1.2-2.5 1.5-1 2.4-2.5 2.4-4.2 0-2.5-1.7-4.6-4-5.4z"/>
+                </svg>
+                Reconnect
+              </div>
+              <div class="tbd">Who's worth a text</div>
+            </div>
+            <div class="tab">
+              <div class="tt">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round">
+                  <circle cx="11" cy="11" r="6.4"/>
+                  <path d="M15.8 15.8 21 21"/>
+                </svg>
+                Search
+              </div>
+              <div class="tbd">Find any message by keyword</div>
+            </div>
+          </div>
+        </div>
         <div class="appbody" style="display:flex;flex-direction:column">
           <div class="display" style="text-align:center;font-weight:700;font-size:1.05rem" id="tmMonth">July 2026</div>
           <div style="text-align:center;font-size:.74rem;color:var(--muted);margin-bottom:6px" id="tmSub">38 people · 3,904 messages sent</div>
           <div class="track"><div class="fill" id="tmFill" style="width:100%"></div><div class="knob" id="tmKnob" style="left:100%"></div></div>
           <div class="ticklabels mono" style="margin-bottom:10px"><span>’14</span><span>’15</span><span>’16</span><span>’17</span><span>’18</span><span>’19</span><span>’20</span><span>’21</span><span>’22</span><span>’23</span><span>’24</span><span>’25</span><span>Now</span></div>
-          <div class="podium" id="tmPodium"></div>
           <div class="lb" id="tmLb" style="flex:1;justify-content:space-evenly"></div>
         </div>
       </div>
@@ -750,26 +944,59 @@
 
         <div class="slide">
           <h3 class="display">Find your #1 person the year you graduated 🎓</h3>
-          <div class="window" aria-label="App recreation: Time Machine tab in May 2015">
+          <div class="window titled" aria-label="App recreation: Time Machine tab in May 2015">
+            <div class="titlebar"><span class="wtitle">Besties</span><svg class="gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.6"/><path d="M12 2.8v2.2M12 19v2.2M21.2 12H19M5 12H2.8M18.5 5.5 17 7M7 17l-1.5 1.5M18.5 18.5 17 17M7 7 5.5 5.5"/></svg></div>
+            <div class="tabhead">
+              <div class="tabbar slim" aria-hidden="true">
+                <div class="tab">
+                  <div class="tt">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M7 2h10v7a5 5 0 0 1-10 0V2z" fill="currentColor"/>
+                      <path d="M7 4.5H4v2a4 4 0 0 0 3.2 3.9M17 4.5h3v2a4 4 0 0 1-3.2 3.9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                      <path d="M11 14h2v4h3v2H8v-2h3v-4z" fill="currentColor"/>
+                    </svg>
+                    All Time
+                  </div>
+                </div>
+                <div class="tab on">
+                  <div class="tt">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M4.6 8.6A8 8 0 1 1 4 12"/><path d="M8.8 8.4H4.2V3.8"/><path d="M12 7.8V12l3.1 1.9"/>
+                    </svg>
+                    Time Machine
+                  </div>
+                </div>
+                <div class="tab">
+                  <div class="tt">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M9 3c-3.9 0-7 2.5-7 5.6 0 1.7.9 3.2 2.4 4.2-.1.9-.5 1.8-1.2 2.5 1.3-.2 2.5-.7 3.4-1.4.7.2 1.5.3 2.4.3 3.9 0 7-2.5 7-5.6S12.9 3 9 3z"/>
+                      <path d="M17.4 8.1c.1.4.1.8.1 1.2 0 3.9-3.8 6.9-8.3 6.9h-.4c1 1.7 3.2 2.9 5.8 2.9.8 0 1.6-.1 2.3-.3.9.7 2 1.2 3.3 1.4-.7-.7-1.1-1.6-1.2-2.5 1.5-1 2.4-2.5 2.4-4.2 0-2.5-1.7-4.6-4-5.4z"/>
+                    </svg>
+                    Reconnect
+                  </div>
+                </div>
+                <div class="tab">
+                  <div class="tt">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round">
+                      <circle cx="11" cy="11" r="6.4"/><path d="M15.8 15.8 21 21"/>
+                    </svg>
+                    Search
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="appbody">
               <div style="text-align:center;font-weight:700;font-size:1rem;padding-top:4px" class="display">May 2015</div>
-              <div style="text-align:center;font-size:.74rem;color:var(--muted);margin-bottom:8px">27 people · 1,932 messages sent</div>
-              <div class="podium">
-                <div class="pod">
-                  <svg class="crown" viewBox="0 0 24 14" fill="currentColor" aria-hidden="true"><path d="M2 12h20l-2-9-5 4-3-6-3 6-5-4z"/></svg>
-                  <div class="av ph-sam" style="width:52px;height:52px;font-size:1.1rem">S</div><span>Sam</span><em class="mono">642</em>
-                </div>
-                <div class="pod"><div class="av ph-riley" style="width:44px;height:44px;font-size:.95rem">R</div><span>Riley</span><em class="mono">413</em></div>
-                <div class="pod"><div class="av ph-mom" style="width:37px;height:37px;font-size:.82rem">M</div><span>Mom</span><em class="mono">301</em></div>
-                <div class="pod"><div class="av ph-ava" style="width:31px;height:31px;font-size:.72rem">A</div><span>Ava</span><em class="mono">187</em></div>
-                <div class="pod"><div class="av ph-jo" style="width:27px;height:27px;font-size:.66rem">J</div><span>Jo</span><em class="mono">154</em></div>
+              <div style="text-align:center;font-size:.74rem;color:var(--muted);margin-bottom:10px">27 people · 1,932 messages sent</div>
+              <div class="listtools">
+                <span class="filt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M6 12h12M10 18h4"/></svg>Filter people…</span>
               </div>
               <div class="lb">
-                <div class="row"><span class="rk">1</span><div class="av ph-sam" style="width:22px;height:22px;font-size:.62rem">S</div><span class="nm">Sam</span><div class="bar"><i style="width:96%"></i></div><span class="ct mono">642</span></div>
-                <div class="row"><span class="rk">2</span><div class="av ph-riley" style="width:22px;height:22px;font-size:.62rem">R</div><span class="nm">Riley</span><div class="bar"><i style="width:64%"></i></div><span class="ct mono">413</span></div>
-                <div class="row"><span class="rk">3</span><div class="av ph-mom" style="width:22px;height:22px;font-size:.62rem">M</div><span class="nm">Mom</span><div class="bar"><i style="width:47%"></i></div><span class="ct mono">301</span></div>
-                <div class="row"><span class="rk">4</span><div class="av ph-ava" style="width:22px;height:22px;font-size:.62rem">A</div><span class="nm">Ava</span><div class="bar"><i style="width:29%"></i></div><span class="ct mono">187</span></div>
-                <div class="row"><span class="rk">5</span><div class="av ph-jo" style="width:22px;height:22px;font-size:.62rem">J</div><span class="nm">Jo</span><div class="bar"><i style="width:24%"></i></div><span class="ct mono">154</span></div>
+                <div class="row r1"><span class="rk"><span class="medal">1</span></span><div class="avc"><div class="av ph-sam" style="width:34px;height:34px;font-size:.92rem">S</div></div><span class="nm">Sam</span><div class="bar"><i style="width:96%"></i></div><span class="ct mono">642</span></div>
+                <div class="row r2"><span class="rk"><span class="medal">2</span></span><div class="avc"><div class="av ph-riley" style="width:29px;height:29px;font-size:.78rem">R</div></div><span class="nm">Riley</span><div class="bar"><i style="width:64%"></i></div><span class="ct mono">413</span></div>
+                <div class="row r3"><span class="rk"><span class="medal">3</span></span><div class="avc"><div class="av ph-mom" style="width:25px;height:25px;font-size:.68rem">M</div></div><span class="nm">Mom</span><div class="bar"><i style="width:47%"></i></div><span class="ct mono">301</span></div>
+                <div class="row"><span class="rk">4</span><div class="avc"><div class="av ph-ava" style="width:22px;height:22px;font-size:.62rem">A</div></div><span class="nm">Ava</span><div class="bar"><i style="width:29%"></i></div><span class="ct mono">187</span></div>
+                <div class="row"><span class="rk">5</span><div class="avc"><div class="av ph-jo" style="width:22px;height:22px;font-size:.62rem">J</div></div><span class="nm">Jo</span><div class="bar"><i style="width:24%"></i></div><span class="ct mono">154</span></div>
               </div>
             </div>
             <div class="scrubfoot">
@@ -798,33 +1025,92 @@
     <div class="tour-row">
       <div class="tour-copy">
         <div class="feat-label">
-          <span class="ic" aria-hidden="true">🕰️</span>
-          <b class="display">Time Machine</b>
+          <span class="ic" aria-hidden="true">📊</span>
+          <b class="display">All-Time Stats</b>
         </div>
-        <h3 class="display">See who your people were, any month of your life.</h3>
-        <p>Drag the slider. The podium reshuffles.</p>
+        <h3 class="display">See your lifetime stats and all-time top people.</h3>
+        <p>Every message ever, counted and charted.</p>
       </div>
       <div class="tour-visual">
-        <div class="window" aria-label="App recreation: Time Machine tab">
-          <div class="appbody">
-            <div style="text-align:center;font-weight:700;font-size:1rem;padding-top:2px" class="display">July 2016</div>
-            <div style="text-align:center;font-size:.74rem;color:var(--muted);margin-bottom:8px">31 people · 2,418 messages sent</div>
-            <div class="track"><div class="fill" style="width:22%"></div><div class="knob" style="left:22%"></div></div>
-            <div class="ticklabels mono" style="margin-bottom:14px"><span>’14</span><span>’15</span><span>’16</span><span>’17</span><span>’18</span><span>’19</span><span>’20</span><span>’21</span><span>’22</span><span>’23</span><span>’24</span><span>’25</span><span>Now</span></div>
-            <div class="podium">
-              <div class="pod">
-                <svg class="crown" viewBox="0 0 24 14" fill="currentColor" aria-hidden="true"><path d="M2 12h20l-2-9-5 4-3-6-3 6-5-4z"/></svg>
-                <div class="av ph-sam" style="width:48px;height:48px;font-size:1rem">S</div><span>Sam</span><em class="mono">598</em>
+        <div class="window titled" aria-label="App recreation: All Time tab">
+          <div class="titlebar"><span class="wtitle">Besties</span><svg class="gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.6"/><path d="M12 2.8v2.2M12 19v2.2M21.2 12H19M5 12H2.8M18.5 5.5 17 7M7 17l-1.5 1.5M18.5 18.5 17 17M7 7 5.5 5.5"/></svg></div>
+          <div class="tabhead">
+            <div class="tabbar slim" aria-hidden="true">
+              <div class="tab on">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M7 2h10v7a5 5 0 0 1-10 0V2z" fill="currentColor"/>
+                    <path d="M7 4.5H4v2a4 4 0 0 0 3.2 3.9M17 4.5h3v2a4 4 0 0 1-3.2 3.9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                    <path d="M11 14h2v4h3v2H8v-2h3v-4z" fill="currentColor"/>
+                  </svg>
+                  All Time
+                </div>
+                <div class="tbd">Your lifetime leaderboard</div>
               </div>
-              <div class="pod"><div class="av ph-riley" style="width:40px;height:40px;font-size:.9rem">R</div><span>Riley</span><em class="mono">402</em></div>
-              <div class="pod"><div class="av ph-mom" style="width:34px;height:34px;font-size:.78rem">M</div><span>Mom</span><em class="mono">356</em></div>
+              <div class="tab">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4.6 8.6A8 8 0 1 1 4 12"/><path d="M8.8 8.4H4.2V3.8"/><path d="M12 7.8V12l3.1 1.9"/>
+                  </svg>
+                  Time Machine
+                </div>
+                <div class="tbd">Rewind month by month</div>
+              </div>
+              <div class="tab">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 3c-3.9 0-7 2.5-7 5.6 0 1.7.9 3.2 2.4 4.2-.1.9-.5 1.8-1.2 2.5 1.3-.2 2.5-.7 3.4-1.4.7.2 1.5.3 2.4.3 3.9 0 7-2.5 7-5.6S12.9 3 9 3z"/>
+                    <path d="M17.4 8.1c.1.4.1.8.1 1.2 0 3.9-3.8 6.9-8.3 6.9h-.4c1 1.7 3.2 2.9 5.8 2.9.8 0 1.6-.1 2.3-.3.9.7 2 1.2 3.3 1.4-.7-.7-1.1-1.6-1.2-2.5 1.5-1 2.4-2.5 2.4-4.2 0-2.5-1.7-4.6-4-5.4z"/>
+                  </svg>
+                  Reconnect
+                </div>
+                <div class="tbd">Who's worth a text</div>
+              </div>
+              <div class="tab">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round">
+                    <circle cx="11" cy="11" r="6.4"/><path d="M15.8 15.8 21 21"/>
+                  </svg>
+                  Search
+                </div>
+                <div class="tbd">Find any message by keyword</div>
+              </div>
+            </div>
+          </div>
+          <div class="appbody">
+            <div class="kpis">
+              <div class="kpi"><b>1.1M</b><i>Total messages</i></div>
+              <div class="kpi"><b>54%</b><i>Share you sent</i></div>
+              <div class="kpi"><b>1,204</b><i>People messaged</i></div>
+              <div class="kpi"><b>912</b><i>Avg per person</i></div>
+              <div class="kpi"><b>2022</b><i>Busiest year</i></div>
+              <div class="kpi"><b>Oct 2022</b><i>Busiest month</i></div>
+            </div>
+            <div class="charts">
+              <div class="chart">
+                <i>People you texted</i>
+                <svg viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
+                  <path d="M0 26 L14 22 L28 24 L42 14 L56 17 L70 8 L84 12 L100 6 V32 H0 Z" fill="var(--blue)" opacity=".13"/>
+                  <path d="M0 26 L14 22 L28 24 L42 14 L56 17 L70 8 L84 12 L100 6" fill="none" stroke="var(--blue)" stroke-width="1.6"/>
+                </svg>
+              </div>
+              <div class="chart">
+                <i>Messages you sent</i>
+                <svg viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
+                  <path d="M0 28 L14 20 L28 23 L42 10 L56 15 L70 5 L84 14 L100 9 V32 H0 Z" fill="var(--green)" opacity=".13"/>
+                  <path d="M0 28 L14 20 L28 23 L42 10 L56 15 L70 5 L84 14 L100 9" fill="none" stroke="var(--green)" stroke-width="1.6"/>
+                </svg>
+              </div>
+            </div>
+            <div class="listtools">
+              <span class="filt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M6 12h12M10 18h4"/></svg>Filter people…</span>
             </div>
             <div class="lb">
-              <div class="row"><span class="rk">1</span><div class="av ph-sam" style="width:22px;height:22px;font-size:.62rem">S</div><span class="nm">Sam</span><div class="bar"><i style="width:96%"></i></div><span class="ct mono">598</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="row"><span class="rk">2</span><div class="av ph-riley" style="width:22px;height:22px;font-size:.62rem">R</div><span class="nm">Riley</span><div class="bar"><i style="width:67%"></i></div><span class="ct mono">402</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="row"><span class="rk">3</span><div class="av ph-mom" style="width:22px;height:22px;font-size:.62rem">M</div><span class="nm">Mom</span><div class="bar"><i style="width:59%"></i></div><span class="ct mono">356</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="row"><span class="rk">4</span><div class="av ph-ava" style="width:22px;height:22px;font-size:.62rem">A</div><span class="nm">Ava</span><div class="bar"><i style="width:31%"></i></div><span class="ct mono">187</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="row"><span class="rk">5</span><div class="av ph-jo" style="width:22px;height:22px;font-size:.62rem">J</div><span class="nm">Jo</span><div class="bar"><i style="width:26%"></i></div><span class="ct mono">154</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="row r1"><span class="rk"><span class="medal">1</span></span><div class="avc"><div class="av ph-sam" style="width:34px;height:34px;font-size:.92rem">S</div></div><span class="nm">Sam</span><div class="bar"><i style="width:96%"></i></div><span class="ct mono">169k</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="row r2"><span class="rk"><span class="medal">2</span></span><div class="avc"><div class="av ph-mom" style="width:29px;height:29px;font-size:.78rem">M</div></div><span class="nm">Mom</span><div class="bar"><i style="width:61%"></i></div><span class="ct mono">104k</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="row r3"><span class="rk"><span class="medal">3</span></span><div class="avc"><div class="av ph-riley" style="width:25px;height:25px;font-size:.68rem">R</div></div><span class="nm">Riley</span><div class="bar"><i style="width:38%"></i></div><span class="ct mono">63k</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="row"><span class="rk">4</span><div class="avc"><div class="av ph-alex" style="width:22px;height:22px;font-size:.62rem">A</div></div><span class="nm">Alex</span><div class="bar"><i style="width:30%"></i></div><span class="ct mono">51k</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="row"><span class="rk">5</span><div class="avc"><div class="av ph-dad" style="width:22px;height:22px;font-size:.62rem">D</div></div><span class="nm">Dad</span><div class="bar"><i style="width:26%"></i></div><span class="ct mono">44k</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
             </div>
           </div>
         </div>
@@ -832,6 +1118,263 @@
     </div>
 
     <div class="tour-row flip">
+      <div class="tour-copy">
+        <div class="feat-label">
+          <span class="ic" aria-hidden="true">🕰️</span>
+          <b class="display">Time Machine</b>
+        </div>
+        <h3 class="display">See who your people were, any month of your life.</h3>
+        <p>Drag the slider. The leaderboard reshuffles.</p>
+      </div>
+      <div class="tour-visual">
+        <div class="window titled" aria-label="App recreation: Time Machine tab">
+          <div class="titlebar"><span class="wtitle">Besties</span><svg class="gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.6"/><path d="M12 2.8v2.2M12 19v2.2M21.2 12H19M5 12H2.8M18.5 5.5 17 7M7 17l-1.5 1.5M18.5 18.5 17 17M7 7 5.5 5.5"/></svg></div>
+          <div class="tabhead">
+            <div class="tabbar slim" aria-hidden="true">
+              <div class="tab">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M7 2h10v7a5 5 0 0 1-10 0V2z" fill="currentColor"/>
+                    <path d="M7 4.5H4v2a4 4 0 0 0 3.2 3.9M17 4.5h3v2a4 4 0 0 1-3.2 3.9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                    <path d="M11 14h2v4h3v2H8v-2h3v-4z" fill="currentColor"/>
+                  </svg>
+                  All Time
+                </div>
+                <div class="tbd">Your lifetime leaderboard</div>
+              </div>
+              <div class="tab on">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4.6 8.6A8 8 0 1 1 4 12"/><path d="M8.8 8.4H4.2V3.8"/><path d="M12 7.8V12l3.1 1.9"/>
+                  </svg>
+                  Time Machine
+                </div>
+                <div class="tbd">Rewind month by month</div>
+              </div>
+              <div class="tab">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 3c-3.9 0-7 2.5-7 5.6 0 1.7.9 3.2 2.4 4.2-.1.9-.5 1.8-1.2 2.5 1.3-.2 2.5-.7 3.4-1.4.7.2 1.5.3 2.4.3 3.9 0 7-2.5 7-5.6S12.9 3 9 3z"/>
+                    <path d="M17.4 8.1c.1.4.1.8.1 1.2 0 3.9-3.8 6.9-8.3 6.9h-.4c1 1.7 3.2 2.9 5.8 2.9.8 0 1.6-.1 2.3-.3.9.7 2 1.2 3.3 1.4-.7-.7-1.1-1.6-1.2-2.5 1.5-1 2.4-2.5 2.4-4.2 0-2.5-1.7-4.6-4-5.4z"/>
+                  </svg>
+                  Reconnect
+                </div>
+                <div class="tbd">Who's worth a text</div>
+              </div>
+              <div class="tab">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round">
+                    <circle cx="11" cy="11" r="6.4"/><path d="M15.8 15.8 21 21"/>
+                  </svg>
+                  Search
+                </div>
+                <div class="tbd">Find any message by keyword</div>
+              </div>
+            </div>
+          </div>
+          <div class="appbody">
+            <div style="text-align:center;font-weight:700;font-size:1rem;padding-top:2px" class="display">July 2016</div>
+            <div style="text-align:center;font-size:.74rem;color:var(--muted);margin-bottom:8px">31 people · 2,418 messages sent</div>
+            <div class="track"><div class="fill" style="width:22%"></div><div class="knob" style="left:22%"></div></div>
+            <div class="ticklabels mono" style="margin-bottom:14px"><span>’14</span><span>’15</span><span>’16</span><span>’17</span><span>’18</span><span>’19</span><span>’20</span><span>’21</span><span>’22</span><span>’23</span><span>’24</span><span>’25</span><span>Now</span></div>
+            <div class="listtools">
+              <span class="filt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M6 12h12M10 18h4"/></svg>Filter people…</span>
+            </div>
+            <div class="lb">
+              <div class="row r1"><span class="rk"><span class="medal">1</span></span><div class="avc"><div class="av ph-sam" style="width:34px;height:34px;font-size:.92rem">S</div></div><span class="nm">Sam</span><div class="bar"><i style="width:96%"></i></div><span class="ct mono">598</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="row r2"><span class="rk"><span class="medal">2</span></span><div class="avc"><div class="av ph-riley" style="width:29px;height:29px;font-size:.78rem">R</div></div><span class="nm">Riley</span><div class="bar"><i style="width:67%"></i></div><span class="ct mono">402</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="row r3"><span class="rk"><span class="medal">3</span></span><div class="avc"><div class="av ph-mom" style="width:25px;height:25px;font-size:.68rem">M</div></div><span class="nm">Mom</span><div class="bar"><i style="width:59%"></i></div><span class="ct mono">356</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="row"><span class="rk">4</span><div class="avc"><div class="av ph-ava" style="width:22px;height:22px;font-size:.62rem">A</div></div><span class="nm">Ava</span><div class="bar"><i style="width:31%"></i></div><span class="ct mono">187</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="row"><span class="rk">5</span><div class="avc"><div class="av ph-jo" style="width:22px;height:22px;font-size:.62rem">J</div></div><span class="nm">Jo</span><div class="bar"><i style="width:26%"></i></div><span class="ct mono">154</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tour-row">
+      <div class="tour-copy">
+        <div class="feat-label">
+          <span class="ic" aria-hidden="true">👋</span>
+          <b class="display">Reconnect</b>
+        </div>
+        <h3 class="display">Find the friends you've lost touch with.</h3>
+        <p>Ranked by who's most worth a text.</p>
+      </div>
+      <div class="tour-visual">
+        <div class="window titled" aria-label="App recreation: Reconnect tab">
+          <div class="titlebar"><span class="wtitle">Besties</span><svg class="gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.6"/><path d="M12 2.8v2.2M12 19v2.2M21.2 12H19M5 12H2.8M18.5 5.5 17 7M7 17l-1.5 1.5M18.5 18.5 17 17M7 7 5.5 5.5"/></svg></div>
+          <div class="tabhead">
+            <div class="tabbar slim" aria-hidden="true">
+              <div class="tab">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M7 2h10v7a5 5 0 0 1-10 0V2z" fill="currentColor"/>
+                    <path d="M7 4.5H4v2a4 4 0 0 0 3.2 3.9M17 4.5h3v2a4 4 0 0 1-3.2 3.9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                    <path d="M11 14h2v4h3v2H8v-2h3v-4z" fill="currentColor"/>
+                  </svg>
+                  All Time
+                </div>
+                <div class="tbd">Your lifetime leaderboard</div>
+              </div>
+              <div class="tab">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4.6 8.6A8 8 0 1 1 4 12"/><path d="M8.8 8.4H4.2V3.8"/><path d="M12 7.8V12l3.1 1.9"/>
+                  </svg>
+                  Time Machine
+                </div>
+                <div class="tbd">Rewind month by month</div>
+              </div>
+              <div class="tab on">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 3c-3.9 0-7 2.5-7 5.6 0 1.7.9 3.2 2.4 4.2-.1.9-.5 1.8-1.2 2.5 1.3-.2 2.5-.7 3.4-1.4.7.2 1.5.3 2.4.3 3.9 0 7-2.5 7-5.6S12.9 3 9 3z"/>
+                    <path d="M17.4 8.1c.1.4.1.8.1 1.2 0 3.9-3.8 6.9-8.3 6.9h-.4c1 1.7 3.2 2.9 5.8 2.9.8 0 1.6-.1 2.3-.3.9.7 2 1.2 3.3 1.4-.7-.7-1.1-1.6-1.2-2.5 1.5-1 2.4-2.5 2.4-4.2 0-2.5-1.7-4.6-4-5.4z"/>
+                  </svg>
+                  Reconnect
+                </div>
+                <div class="tbd">Who's worth a text</div>
+              </div>
+              <div class="tab">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round">
+                    <circle cx="11" cy="11" r="6.4"/><path d="M15.8 15.8 21 21"/>
+                  </svg>
+                  Search
+                </div>
+                <div class="tbd">Find any message by keyword</div>
+              </div>
+            </div>
+          </div>
+          <div class="appbody">
+            <div class="listtools">
+              <span class="lt-lbl">Last Contact:</span>
+              <span class="pick">2 years<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3.5 16.5 9h-9zM12 20.5 7.5 15h9z"/></svg></span>
+              <span class="filt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M6 12h12M10 18h4"/></svg>Filter people…</span>
+            </div>
+            <div class="rtable">
+              <div class="hd"><span>Name</span><span>Last text</span><span>Msgs</span><span>Score</span><span></span></div>
+              <div class="r"><span class="nm">Jordan P.</span><span class="dim mono">214d ago</span><span class="dim mono">18,204</span><span class="score mono">92</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="r"><span class="nm">Nana</span><span class="dim mono">96d ago</span><span class="dim mono">9,881</span><span class="score mono">87</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="r"><span class="nm">Dev</span><span class="dim mono">371d ago</span><span class="dim mono">12,530</span><span class="score mono">81</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="r"><span class="nm">Casey M.</span><span class="dim mono">158d ago</span><span class="dim mono">7,442</span><span class="score mono">76</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="r"><span class="nm">Sky</span><span class="dim mono">289d ago</span><span class="dim mono">5,120</span><span class="score mono">71</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="r"><span class="nm">Maya R.</span><span class="dim mono">122d ago</span><span class="dim mono">6,918</span><span class="score mono">68</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+              <div class="r"><span class="nm">Leo</span><span class="dim mono">402d ago</span><span class="dim mono">4,301</span><span class="score mono">64</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tour-row flip">
+      <div class="tour-copy">
+        <div class="feat-label">
+          <span class="ic" aria-hidden="true">🔍</span>
+          <b class="display">Search</b>
+        </div>
+        <h3 class="display">Find any message you've ever sent, by keyword.</h3>
+        <p>One word. Every conversation, every year.</p>
+      </div>
+      <div class="tour-visual">
+        <div class="window titled" aria-label="App recreation: Search tab">
+          <div class="titlebar"><span class="wtitle">Besties</span><svg class="gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.6"/><path d="M12 2.8v2.2M12 19v2.2M21.2 12H19M5 12H2.8M18.5 5.5 17 7M7 17l-1.5 1.5M18.5 18.5 17 17M7 7 5.5 5.5"/></svg></div>
+          <div class="tabhead">
+            <div class="tabbar slim" aria-hidden="true">
+              <div class="tab">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M7 2h10v7a5 5 0 0 1-10 0V2z" fill="currentColor"/>
+                    <path d="M7 4.5H4v2a4 4 0 0 0 3.2 3.9M17 4.5h3v2a4 4 0 0 1-3.2 3.9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                    <path d="M11 14h2v4h3v2H8v-2h3v-4z" fill="currentColor"/>
+                  </svg>
+                  All Time
+                </div>
+                <div class="tbd">Your lifetime leaderboard</div>
+              </div>
+              <div class="tab">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4.6 8.6A8 8 0 1 1 4 12"/><path d="M8.8 8.4H4.2V3.8"/><path d="M12 7.8V12l3.1 1.9"/>
+                  </svg>
+                  Time Machine
+                </div>
+                <div class="tbd">Rewind month by month</div>
+              </div>
+              <div class="tab">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 3c-3.9 0-7 2.5-7 5.6 0 1.7.9 3.2 2.4 4.2-.1.9-.5 1.8-1.2 2.5 1.3-.2 2.5-.7 3.4-1.4.7.2 1.5.3 2.4.3 3.9 0 7-2.5 7-5.6S12.9 3 9 3z"/>
+                    <path d="M17.4 8.1c.1.4.1.8.1 1.2 0 3.9-3.8 6.9-8.3 6.9h-.4c1 1.7 3.2 2.9 5.8 2.9.8 0 1.6-.1 2.3-.3.9.7 2 1.2 3.3 1.4-.7-.7-1.1-1.6-1.2-2.5 1.5-1 2.4-2.5 2.4-4.2 0-2.5-1.7-4.6-4-5.4z"/>
+                  </svg>
+                  Reconnect
+                </div>
+                <div class="tbd">Who's worth a text</div>
+              </div>
+              <div class="tab on">
+                <div class="tt">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round">
+                    <circle cx="11" cy="11" r="6.4"/><path d="M15.8 15.8 21 21"/>
+                  </svg>
+                  Search
+                </div>
+                <div class="tbd">Find any message by keyword</div>
+              </div>
+            </div>
+          </div>
+          <div class="searchhead">
+            <div class="qfield">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.4"/><path d="M15.8 15.8 21 21"/></svg>
+              <span class="q">road trip</span>
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="opacity:.4"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm3.5 11.1-1.4 1.4L12 13.4l-2.1 2.1-1.4-1.4L10.6 12 8.5 9.9l1.4-1.4L12 10.6l2.1-2.1 1.4 1.4L13.4 12z"/></svg>
+            </div>
+            <div class="filterbar">
+              <div class="fl"><i>Person</i><span class="pick">Anyone<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3.5 16.5 9h-9zM12 20.5 7.5 15h9z"/></svg></span></div>
+              <div class="fl"><i>When</i><span class="pick">Any time<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3.5 16.5 9h-9zM12 20.5 7.5 15h9z"/></svg></span></div>
+              <div class="fl"><i>Sender</i><span class="pick">Anyone<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3.5 16.5 9h-9zM12 20.5 7.5 15h9z"/></svg></span></div>
+              <div class="fl"><i>App</i><span class="pick">All<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3.5 16.5 9h-9zM12 20.5 7.5 15h9z"/></svg></span></div>
+              <div class="fl"><i>Contains</i><span class="pick">Anything<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3.5 16.5 9h-9zM12 20.5 7.5 15h9z"/></svg></span></div>
+              <div class="fl sort"><i>Sort</i><span class="pick">Best match<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3.5 16.5 9h-9zM12 20.5 7.5 15h9z"/></svg></span></div>
+            </div>
+          </div>
+          <div class="sresults">
+            <div class="cnt mono">1,284 matches · showing 200</div>
+            <div class="sres">
+              <div class="av ph-sam" style="width:30px;height:30px;font-size:.8rem">S</div>
+              <div class="body">
+                <div class="sr-top"><span class="sr-nm">Sam</span><span class="sr-dt mono">Aug 4, 2019</span></div>
+                <div class="sn">You: ok hear me out — <mark>road</mark> <mark>trip</mark> to Big Sur, we leave friday</div>
+              </div>
+            </div>
+            <div class="sres">
+              <div class="av ph-mom" style="width:30px;height:30px;font-size:.8rem">M</div>
+              <div class="body">
+                <div class="sr-top"><span class="sr-nm">Mom</span><span class="sr-dt mono">Jun 12, 2021</span></div>
+                <div class="sn">drive safe on your <mark>road</mark> <mark>trip</mark> and text me when you get there ❤️</div>
+              </div>
+            </div>
+            <div class="sres">
+              <div class="av ph-riley" style="width:30px;height:30px;font-size:.8rem">R</div>
+              <div class="body">
+                <div class="sr-top"><span class="sr-nm">Riley</span><span class="sr-dt mono">Mar 2, 2016</span></div>
+                <div class="sn">the <mark>road</mark> <mark>trip</mark> playlist is officially unhinged and I love it</div>
+              </div>
+            </div>
+            <div class="sres">
+              <div class="av ph-nana" style="width:30px;height:30px;font-size:.8rem">N</div>
+              <div class="body">
+                <div class="sr-top"><span class="sr-nm">Nana</span><span class="sr-dt mono">Sep 19, 2014</span></div>
+                <div class="sn">Grandpa still tells the story about our <mark>road</mark> <mark>trip</mark> to Maine</div>
+              </div>
+            </div>
+            <div class="showmore">Show 200 more</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tour-row">
       <div class="tour-copy">
         <div class="feat-label">
           <span class="ic" aria-hidden="true">🫶</span>
@@ -868,78 +1411,6 @@
             <div class="lbl display">February 2022</div>
             <div class="track"><div class="fill" style="width:66%"></div><div class="knob" style="left:66%"></div></div>
             <div class="ticklabels mono"><span>’14</span><span>’15</span><span>’16</span><span>’17</span><span>’18</span><span>’19</span><span>’20</span><span>’21</span><span>’22</span><span>’23</span><span>’24</span><span>’25</span><span>’26</span></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tour-row">
-      <div class="tour-copy">
-        <div class="feat-label">
-          <span class="ic" aria-hidden="true">📊</span>
-          <b class="display">All-Time Stats</b>
-        </div>
-        <h3 class="display">See your lifetime stats and all-time top people.</h3>
-        <p>Every message ever, counted and charted.</p>
-      </div>
-      <div class="tour-visual">
-        <div class="window" aria-label="App recreation: All Time tab">
-          <div class="appbody">
-            <div class="kpis">
-              <div class="kpi"><b>1.1M</b><i>Total messages</i></div>
-              <div class="kpi"><b>54%</b><i>Share you sent</i></div>
-              <div class="kpi"><b>2022</b><i>Busiest year</i></div>
-            </div>
-            <div class="charts">
-              <div class="chart">
-                <i>People you texted</i>
-                <svg viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
-                  <path d="M0 26 L14 22 L28 24 L42 14 L56 17 L70 8 L84 12 L100 6 V32 H0 Z" fill="var(--blue)" opacity=".13"/>
-                  <path d="M0 26 L14 22 L28 24 L42 14 L56 17 L70 8 L84 12 L100 6" fill="none" stroke="var(--blue)" stroke-width="1.6"/>
-                </svg>
-              </div>
-              <div class="chart">
-                <i>Messages you sent</i>
-                <svg viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
-                  <path d="M0 28 L14 20 L28 23 L42 10 L56 15 L70 5 L84 14 L100 9 V32 H0 Z" fill="var(--green)" opacity=".13"/>
-                  <path d="M0 28 L14 20 L28 23 L42 10 L56 15 L70 5 L84 14 L100 9" fill="none" stroke="var(--green)" stroke-width="1.6"/>
-                </svg>
-              </div>
-            </div>
-            <div class="lb">
-              <div class="row"><span class="rk">1</span><div class="av ph-sam" style="width:22px;height:22px;font-size:.62rem">S</div><span class="nm">Sam</span><div class="bar"><i style="width:96%"></i></div><span class="ct mono">169k</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="row"><span class="rk">2</span><div class="av ph-mom" style="width:22px;height:22px;font-size:.62rem">M</div><span class="nm">Mom</span><div class="bar"><i style="width:61%"></i></div><span class="ct mono">104k</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="row"><span class="rk">3</span><div class="av ph-riley" style="width:22px;height:22px;font-size:.62rem">R</div><span class="nm">Riley</span><div class="bar"><i style="width:38%"></i></div><span class="ct mono">63k</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="row"><span class="rk">4</span><div class="av ph-alex" style="width:22px;height:22px;font-size:.62rem">A</div><span class="nm">Alex</span><div class="bar"><i style="width:30%"></i></div><span class="ct mono">51k</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="row"><span class="rk">5</span><div class="av ph-dad" style="width:22px;height:22px;font-size:.62rem">D</div><span class="nm">Dad</span><div class="bar"><i style="width:26%"></i></div><span class="ct mono">44k</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tour-row flip">
-      <div class="tour-copy">
-        <div class="feat-label">
-          <span class="ic" aria-hidden="true">👋</span>
-          <b class="display">Reconnect</b>
-        </div>
-        <h3 class="display">Find the friends you've lost touch with.</h3>
-        <p>Ranked by who's most worth a text.</p>
-      </div>
-      <div class="tour-visual">
-        <div class="window" aria-label="App recreation: Reconnect tab">
-          <div class="appbody">
-            <div class="rtable">
-              <div class="hd"><span>Name</span><span>Last text</span><span>Msgs</span><span>Score</span><span></span></div>
-              <div class="r"><span class="nm">Jordan P.</span><span class="dim mono">214d ago</span><span class="dim mono">18,204</span><span class="score mono">92</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="r"><span class="nm">Nana</span><span class="dim mono">96d ago</span><span class="dim mono">9,881</span><span class="score mono">87</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="r"><span class="nm">Dev</span><span class="dim mono">371d ago</span><span class="dim mono">12,530</span><span class="score mono">81</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="r"><span class="nm">Casey M.</span><span class="dim mono">158d ago</span><span class="dim mono">7,442</span><span class="score mono">76</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="r"><span class="nm">Sky</span><span class="dim mono">289d ago</span><span class="dim mono">5,120</span><span class="score mono">71</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="r"><span class="nm">Maya R.</span><span class="dim mono">122d ago</span><span class="dim mono">6,918</span><span class="score mono">68</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-              <div class="r"><span class="nm">Leo</span><span class="dim mono">402d ago</span><span class="dim mono">4,301</span><span class="score mono">64</span><span class="msgbtn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg></span></div>
-            </div>
           </div>
         </div>
       </div>
@@ -1090,7 +1561,6 @@
   const tmSub = document.getElementById("tmSub");
   const tmFill = document.getElementById("tmFill");
   const tmKnob = document.getElementById("tmKnob");
-  const tmPodium = document.getElementById("tmPodium");
   const tmLb = document.getElementById("tmLb");
   const rdMsgs = document.getElementById("rdMsgs");
   const rdMonth = document.getElementById("rdMonth");
@@ -1098,7 +1568,6 @@
   const rdKnob = document.getElementById("rdKnob");
 
   const MSG_SVG = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 12c0 4-4 7-9 7-1.2 0-2.4-.2-3.4-.5L4 20l1.2-3.2C3.8 15.5 3 13.8 3 12c0-4 4-7 9-7s9 3 9 7z"/></svg>';
-  const CROWN_SVG = '<svg class="crown" viewBox="0 0 24 14" fill="currentColor" aria-hidden="true"><path d="M2 12h20l-2-9-5 4-3-6-3 6-5-4z"/></svg>';
 
   // Time Machine timeline: Feb 2014 → Jul 2026. Reader: Mar 2019 → Jul 2026.
   const TM_MONTHS = 149, RD_MONTHS = 88;
@@ -1152,17 +1621,17 @@
   const eraMar19 = { date: "Friday · Mar 8, 2019",
     msgs: [["me","hey! it's Jordan from Hinge 😅"],["them","the one with the dog in every photo?"],["me","she's my roommate's but yes"],["them","ok that's a technicality but hi 🙂"],["me","coffee this week? I know a place that takes lattes very seriously"],["them","bold. I'm in"],["me","friday 10am. prepare to be caffeinated"]] };
 
-  const PODIUM_SIZES = [[46, ".98rem"], [39, ".88rem"], [33, ".76rem"], [28, ".68rem"], [24, ".62rem"]];
+  // Top three get a medal and a bigger avatar; everyone else stays at 22px.
+  const TOP3 = [[34, ".92rem"], [29, ".78rem"], [25, ".68rem"]];
   function renderTM(state) {
     tmSub.textContent = state.sub;
-    tmPodium.innerHTML = state.lb.slice(0, 5).map(([[ph, letter, name], count], i) => {
-      const [size, fs] = PODIUM_SIZES[i];
-      return `<div class="pod" data-k="${name}">${i === 0 ? CROWN_SVG : ""}<div class="av ${ph}" style="width:${size}px;height:${size}px;font-size:${fs}">${letter}</div><span>${name}</span><em class="mono">${count.toLocaleString()}</em></div>`;
-    }).join("");
     const max = state.lb[0][1];
-    tmLb.innerHTML = state.lb.map(([[ph, letter, name], count], i) =>
-      `<div class="row" data-k="${name}"><span class="rk">${i + 1}</span><div class="av ${ph}" style="width:22px;height:22px;font-size:.62rem">${letter}</div><span class="nm">${name}</span><div class="bar"><i style="width:${Math.round(count / max * 96)}%"></i></div><span class="ct mono">${count.toLocaleString()}</span><span class="msgbtn">${MSG_SVG}</span></div>`
-    ).join("");
+    tmLb.innerHTML = state.lb.map(([[ph, letter, name], count], i) => {
+      const rank = i + 1;
+      const [size, fs] = TOP3[i] || [22, ".62rem"];
+      const badge = rank <= 3 ? `<span class="medal">${rank}</span>` : rank;
+      return `<div class="row${rank <= 3 ? " r" + rank : ""}" data-k="${name}"><span class="rk">${badge}</span><div class="avc"><div class="av ${ph}" style="width:${size}px;height:${size}px;font-size:${fs}">${letter}</div></div><span class="nm">${name}</span><div class="bar"><i style="width:${Math.round(count / max * 96)}%"></i></div><span class="ct mono">${count.toLocaleString()}</span><span class="msgbtn">${MSG_SVG}</span></div>`;
+    }).join("");
   }
   // FLIP: measure keyed elements, re-render, then animate each from its old
   // spot to the new one — rank changes read as people racing up and down.

@@ -1,4 +1,10 @@
-# Chunky Tab Bar — Plan
+# Chunky Tab Bar — Plan  ·  ✅ SHIPPED
+
+**Status: done.** Built in `Besties/Besties/Views/ContentView.swift` (`TabBar`,
+`LeaderboardRow`) + `BestiesApp.swift` (`installTitlebarGear`), and mirrored in
+the marketing site's app recreations (`site/src/landing.html`). What actually
+shipped is in **Final decisions** at the bottom — where it differs from the
+plan below, the bottom wins.
 
 Goal: replace the stock segmented Picker at the top of the main window with a
 custom tab bar — bigger, blockier, one icon per tab — and reorder so Time
@@ -67,3 +73,40 @@ fall back to a left-aligned row. A wider tab bar shifts the numbers:
 
 Half a day including the narrow-window fiddling. No data, index, or release
 implications — pure ContentView UI.
+
+---
+
+## Final decisions (as shipped)
+
+1. **Flat gray track (option 1a).** The bar is a single track — `Color.ink`
+   at 6.5%, corner radius 12, 3pt padding, 2pt between chips — with one
+   `matchedGeometryEffect` sun pill (radius 9) sliding to the active tab.
+   Hover on an inactive chip = ink at 5.5%. Reduce Motion swaps without the
+   spring.
+2. **Full width, with descriptions.** Not a centered cluster: the chips are
+   `flex: 1` equals across the whole header, each one an icon + title over a
+   one-line description — All Time "Your lifetime leaderboard", Time Machine
+   "Rewind month by month", Reconnect "Who's worth a text", Search "Find any
+   message by keyword". Under 560pt the descriptions drop and the titles
+   stay (the plan's icon-only fallback wasn't needed).
+3. **Order is All Time · Time Machine · Reconnect · Search** — Search last,
+   not third as the plan had it. ⌘1–⌘4 follow `Tab.allCases`, so they track
+   the order automatically; ⌘F still jumps to Search by name.
+4. **Top-3-only hierarchy, no podium.** `PodiumView` (and `RaceEntry` /
+   `monthTopFive`) are deleted. `LeaderboardRow` carries the hierarchy
+   instead: gold/silver/bronze gradient medal circles with the rank number
+   inside, avatars 46/40/34 vs 28, names 15.5/14.5/13.5 semibold vs 12 — but
+   every column is a fixed width, so the whole list still reads as a table.
+   Ranks 4+ are unchanged.
+5. **Gear moved to the title bar.** Settings is a bare `gearshape` in an
+   `NSTitlebarAccessoryViewController` (trailing), which keeps the standard
+   title-bar height and the window title centered. Nothing sits in the app
+   header but the tab bar.
+6. **Filter lives above its list.** The "Filter people…" field
+   (`line.3.horizontal.decrease`, not a magnifier) is right-aligned directly
+   above each list; on Reconnect the "Last Contact:" label + range picker sit
+   inline on its left. The per-tab helper text under the tabs is gone.
+
+The site's app recreations (hero demo, use-case slides, tab tour) were
+updated to match all six: tab bar, medals, filter row, titlebar with centered
+name + gear, and no podium anywhere.

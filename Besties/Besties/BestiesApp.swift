@@ -58,7 +58,7 @@ struct BestiesApp: App {
                 }
             }
         }
-        .defaultSize(width: 800, height: (NSScreen.main?.visibleFrame.height ?? 960) - 48)
+        .defaultSize(width: 750, height: (NSScreen.main?.visibleFrame.height ?? 960) - 48)
         .commands {
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updaterController: updaterController)
@@ -95,18 +95,18 @@ struct BestiesApp: App {
         window.addTitlebarAccessoryViewController(accessory)
     }
 
-    /// Upgrade existing installs to the new default frame — 800pt wide,
+    /// Upgrade existing installs to the new default frame — 750pt wide,
     /// screen height minus a little breathing room — exactly once, so manual
     /// resizes stick afterward.
     private static func applyDefaultFrameOnce() {
-        let key = "didApplyDefaultFrame800"
+        let key = "didApplyDefaultFrame750"
         guard !UserDefaults.standard.bool(forKey: key),
               let window = NSApp.windows.first,
               let screen = window.screen ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
         let margin: CGFloat = 24
-        let frame = NSRect(x: visible.midX - 400, y: visible.minY + margin,
-                           width: 800, height: visible.height - margin * 2)
+        let frame = NSRect(x: visible.midX - 375, y: visible.minY + margin,
+                           width: 750, height: visible.height - margin * 2)
         window.setFrame(frame, display: true)
         UserDefaults.standard.set(true, forKey: key)
     }
@@ -140,11 +140,12 @@ private struct CheckForUpdatesView: View {
 
 /// The titlebar settings button: just the icon, no button chrome.
 private struct TitlebarGear: View {
+    @Environment(\.openSettings) private var openSettings
     @State private var hovered = false
 
     var body: some View {
         Button {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            openSettings()
         } label: {
             Image(systemName: "gearshape")
                 .font(.system(size: 12, weight: .medium))
@@ -196,7 +197,6 @@ final class AppState {
     var monthlyConversations: [String: [Conversation]] = [:]
     var peoplePerMonth: [Int] = []
     var sentPerMonth: [Int] = []
-    var globalStats = GlobalStats()
     var timelineLoading = false
     @ObservationIgnored private var avatarCache: [String: Data?] = [:]
     var isLoading = false
@@ -266,7 +266,7 @@ final class AppState {
 
         let includeWhatsApp = whatsAppEnabled
         Task { [messageStore, whatsAppStore] in
-            let result: Result<([String: [Conversation]], [String], [Int], [Int], GlobalStats), Error> = await Task.detached {
+            let result: Result<([String: [Conversation]], [String], [Int], [Int]), Error> = await Task.detached {
                 do {
                     var byMonth = try messageStore.fetchConversationsByMonth()
                     if includeWhatsApp {
@@ -294,23 +294,18 @@ final class AppState {
                         people.append(keys.count)
                         sent.append(sentCount)
                     }
-                    var stats = (try? messageStore.fetchGlobalStats()) ?? GlobalStats()
-                    if includeWhatsApp, let waHours = try? whatsAppStore.fetchSentHourCounts() {
-                        stats.sentHourCounts = zip(stats.sentHourCounts, waHours).map(+)
-                    }
-                    return .success((byMonth, months, people, sent, stats))
+                    return .success((byMonth, months, people, sent))
                 } catch {
                     return .failure(error)
                 }
             }.value
 
             switch result {
-            case .success(let (byMonth, months, people, sent, stats)):
+            case .success(let (byMonth, months, people, sent)):
                 self.monthlyConversations = byMonth
                 self.timelineMonths = months
                 self.peoplePerMonth = people
                 self.sentPerMonth = sent
-                self.globalStats = stats
             case .failure(let error):
                 self.error = error.localizedDescription
             }

@@ -9,6 +9,46 @@ final class ContactResolver {
     private var emailToImage: [String: Data] = [:]
     private var loaded = false
 
+    /// Screenshot mode drops every surname so marketing captures show first
+    /// names only, never a real person's full name. Enable with
+    /// `defaults write com.besties.app screenshotMode -bool true`, then relaunch.
+    /// Debug builds only — Release builds always show full names.
+    #if DEBUG
+    static let isScreenshotMode = UserDefaults.standard.bool(forKey: "screenshotMode")
+    #else
+    static let isScreenshotMode = false
+    #endif
+
+    private static let givenNamePool = [
+        "Adrian", "Bianca", "Camille", "Dorian", "Elena", "Felix",
+        "Greta", "Hugo", "Iris", "Julian", "Kira", "Lorenzo",
+        "Mira", "Nadia", "Oscar", "Priya", "Rafael", "Simone",
+        "Theo", "Vera",
+    ]
+
+    /// Stable FNV-1a over `text`. Swift's own `hashValue` is seeded per process
+    /// and would drift between runs, so the same person would look like a
+    /// different person in each capture.
+    private static func stableHash(_ text: some StringProtocol) -> UInt64 {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in text.utf8 {
+            hash = (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01b3
+        }
+        return hash
+    }
+
+    /// Keeps the given name and drops everything after it.
+    static func screenshotName(_ name: String) -> String {
+        guard isScreenshotMode, let space = name.firstIndex(of: " ") else { return name }
+        return String(name[..<space])
+    }
+
+    /// A stand-in name for a handle that never resolved to a contact card, so
+    /// screenshots never show a raw phone number or email address.
+    static func screenshotPlaceholder(forHandle handle: String) -> String {
+        givenNamePool[Int(stableHash(handle) % UInt64(givenNamePool.count))]
+    }
+
     func loadContacts() {
         guard !loaded else { return }
         loaded = true
@@ -123,7 +163,7 @@ final class ContactResolver {
             let last = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
             let phone = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
 
-            let name = [first, last].filter { !$0.isEmpty }.joined(separator: " ")
+            let name = Self.screenshotName([first, last].filter { !$0.isEmpty }.joined(separator: " "))
             guard !name.isEmpty else { continue }
 
             let digits = phone.filter(\.isNumber)
@@ -149,7 +189,7 @@ final class ContactResolver {
             let last = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
             let email = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
 
-            let name = [first, last].filter { !$0.isEmpty }.joined(separator: " ")
+            let name = Self.screenshotName([first, last].filter { !$0.isEmpty }.joined(separator: " "))
             guard !name.isEmpty, !email.isEmpty else { continue }
 
             emailLookup[email.lowercased()] = name

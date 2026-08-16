@@ -170,36 +170,6 @@ final class MessageStore {
         return byMonth
     }
 
-    /// Whole-history aggregates (all messages, including group chats) for the
-    /// day/time KPIs. Computed in SQL so we never load individual messages.
-    func fetchGlobalStats() throws -> GlobalStats {
-        var db: OpaquePointer?
-        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
-            let msg = db.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "Unknown error"
-            sqlite3_close(db)
-            throw MessageStoreError.openFailed(msg)
-        }
-        defer { sqlite3_close(db) }
-
-        var stats = GlobalStats()
-        let localTime = "datetime(m.date / 1000000000 + 978307200, 'unixepoch', 'localtime')"
-
-        // Sent-message hour distribution → night-owl share.
-        let hourSQL = "SELECT CAST(strftime('%H', \(localTime)) AS INTEGER) AS hr, COUNT(*) FROM message m WHERE m.is_from_me = 1 GROUP BY hr"
-        var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, hourSQL, -1, &stmt, nil) == SQLITE_OK {
-            while sqlite3_step(stmt) == SQLITE_ROW {
-                let hr = Int(sqlite3_column_int(stmt, 0))
-                if (0..<24).contains(hr) {
-                    stats.sentHourCounts[hr] = Int(sqlite3_column_int(stmt, 1))
-                }
-            }
-        }
-        sqlite3_finalize(stmt)
-
-        return stats
-    }
-
     /// The 1:1 chat rowids belonging to a person's handles. Group chats excluded,
     /// consistent with every other count in the app.
     func fetchChatIDs(handleIDs: [Int64]) throws -> [Int64] {
@@ -468,10 +438,6 @@ final class MessageStore {
         let value = String(cString: cString)
         return value.isEmpty ? nil : value
     }
-}
-
-struct GlobalStats {
-    var sentHourCounts = Array(repeating: 0, count: 24)
 }
 
 enum MessageStoreError: LocalizedError {
