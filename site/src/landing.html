@@ -746,11 +746,11 @@
   </a>
   <div class="nav-links">
     <a href="#privacy">Privacy</a>
-    <a href="https://lej.co" target="_blank" rel="noopener" data-t="maker_click" data-t-location="nav">Made by Jordan</a>
     <a class="gh" href="https://github.com/jetlej/besties" target="_blank" rel="noopener" data-t="github_click" data-t-location="nav">
       <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
       <span class="gh-label">GitHub</span>
     </a>
+    <a href="https://lej.co" target="_blank" rel="noopener" data-t="maker_click" data-t-location="nav">Who made this?</a>
     <a class="btn" href="#get" data-t="nav_get_click">Get it</a>
   </div>
 </nav>
@@ -1516,7 +1516,7 @@
       </details>
       <details>
         <summary>Who made this?</summary>
-        <p>Jordan Lejuwaan — an independent maker in New York City, not a company. Everything else I've built (and how to reach me) is at <a href="https://lej.co" target="_blank" rel="noopener" data-t="maker_click" data-t-location="faq">lej.co</a>.</p>
+        <p>Me — <a href="https://lej.co" target="_blank" rel="noopener" data-t="maker_click" data-t-location="faq">Jordan Lejuwaan</a>. I've spent the last <span id="makerYears">17</span> years building things: Futurism (science publication, acquired 2019), Gravity Blanket ($4.7M Kickstarter, acquired 2021), ZeroSpace (immersive space in NYC), and now smaller tools like this one. Besties came from wanting to reconnect with people I'd drifted from.</p>
       </details>
       <details>
         <summary>Is it really yours forever?</summary>
@@ -1809,6 +1809,9 @@
   document.getElementById("cprev").addEventListener("click", () => goTo(currentIndex() - 1));
   document.getElementById("cnext").addEventListener("click", () => goTo(currentIndex() + 1));
   syncDots();
+
+  /* ---------- maker years (since 2009) ---------- */
+  document.getElementById("makerYears").textContent = new Date().getFullYear() - 2009;
 
   /* ---------- copy audit prompt ---------- */
   const copyBtn = document.getElementById("copyPrompt");
