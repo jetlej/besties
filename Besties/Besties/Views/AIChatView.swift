@@ -385,6 +385,7 @@ struct AIChatView: View {
         ("📈", "Am I texting more than last year?", .green),
         ("👋", "Who should I reconnect with?", .orange),
         ("🐣", "What was my first ever message?", .purple),
+        ("❤️", "Who have I said I love you to the most? Give me a leaderboard", .pink),
     ]
 
     /// "anything" gets the site's sun-highlight treatment.
