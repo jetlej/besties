@@ -12,6 +12,19 @@ final class AIToolbox {
     private static let textLimit = 500
     /// read_transcript never returns more than this, whatever the model asks for.
     private static let transcriptCap = 120
+    /// One semantic result is a stretch of conversation, so its snippet gets a
+    /// tighter budget than a single message body.
+    private static let snippetLimit = 400
+    /// semantic_search never returns more than this.
+    private static let semanticCap = 30
+    /// Candidates pulled from each retriever before filtering and fusion.
+    private static let candidateMultiple = 3
+    /// Measured on the real archive: 1,095,735 indexed messages → 299,158 chunks.
+    private static let messagesPerChunk = 3.7
+    /// Mirrors `SearchIndex`'s private offset: WhatsApp rows live past any
+    /// plausible chat.db rowid so `msgs.id` is unique across sources. Search
+    /// results hand back the un-offset rowid; chunk bounds are `msgs.id`.
+    private static let whatsAppIndexIDOffset: Int64 = 1 << 40
 
     private let appState: AppState
 
@@ -63,6 +76,21 @@ final class AIToolbox {
                 ],
             ],
             [
+                "name": "semantic_search",
+                "description": "Meaning-based search: finds stretches of conversation that are about something even when they never use the words you typed (\"that restaurant she recommended\"). Always pass person — scoped to one relationship it works well, and over the whole archive it is mostly noise. Try search_messages first whenever a name, place or phrase was probably typed out; use this when the exact wording is unknown. Each result is a short run of consecutive messages, not one message.",
+                "input_schema": [
+                    "type": "object",
+                    "properties": [
+                        "query": ["type": "string", "description": "What the conversation was about, described in a phrase or a sentence — this is matched by meaning, so plain description beats keywords."],
+                        "person": ["type": "string", "description": "Restrict to one person's chats. Effectively required: unscoped results are unreliable."],
+                        "after": ["type": "string", "description": "Only messages on or after this date (YYYY-MM-DD, YYYY-MM or YYYY)."],
+                        "before": ["type": "string", "description": "Only messages before this date."],
+                        "limit": ["type": "integer", "description": "Default 15, max 30."],
+                    ],
+                    "required": ["query"],
+                ],
+            ],
+            [
                 "name": "read_transcript",
                 "description": "A window of consecutive messages with one person, oldest first — what was actually said around a moment. Use it after search_messages to read the context around a hit.",
                 "input_schema": [
@@ -100,6 +128,7 @@ final class AIToolbox {
         case "list_people": return listPeople(input)
         case "person_summary": return await personSummary(input)
         case "search_messages": return await searchMessages(input)
+        case "semantic_search": return await semanticSearch(input)
         case "read_transcript": return await readTranscript(input)
         case "run_sql": return await runSQL(input)
         default: return ToolJSON.error("unknown tool \"\(name)\"")
@@ -203,9 +232,6 @@ final class AIToolbox {
             return ToolJSON.error("search failed — the message index may still be building")
         }
 
-        let chatInfo = appState.chatInfoByID
-        let imConvos = appState.iMessageConvoByHandleID
-        let waConvos = appState.whatsAppConvoBySessionID
         let results = response.results.map { hit -> [String: Any] in
             var row: [String: Any] = [
                 "id": hit.id,
@@ -214,16 +240,9 @@ final class AIToolbox {
                 "source": hit.source == .whatsApp ? "whatsapp" : "imessage",
                 "snippet": ToolJSON.truncate(Self.plainSnippet(hit.snippet), Self.textLimit),
             ]
-            if hit.source == .whatsApp {
-                if let convo = waConvos[hit.chatID] { row["person"] = convo.resolvedName }
-            } else if let info = chatInfo[hit.chatID] {
-                if info.isGroup {
-                    row["person"] = info.displayName ?? "Group chat"
-                    row["group"] = true
-                } else if let handleID = info.handleID, let convo = imConvos[handleID] {
-                    row["person"] = convo.resolvedName
-                }
-            }
+            let label = chatLabel(source: hit.source, chatID: hit.chatID)
+            if let name = label.name { row["person"] = name }
+            if label.isGroup { row["group"] = true }
             return row
         }
         return ToolJSON.encode([
@@ -232,6 +251,201 @@ final class AIToolbox {
             "returned": results.count,
             "results": results,
         ])
+    }
+
+    // MARK: - semantic_search
+
+    /// Meaning-match over the chunk vectors, fused with the same query run
+    /// through FTS. Two ranked lists in, one reciprocal-rank-fused list out;
+    /// each survivor is hydrated back into readable messages from the search
+    /// index, so the model gets conversation rather than ids.
+    private func semanticSearch(_ input: [String: Any]) async -> String {
+        guard let query = ToolJSON.string(input["query"]), !query.isEmpty else {
+            return ToolJSON.error("query is required")
+        }
+        let limit = min(max(ToolJSON.int(input["limit"]) ?? 15, 1), Self.semanticCap)
+        var dateError: String?
+        let after = ToolJSON.date(input, "after", error: &dateError)
+        let before = ToolJSON.date(input, "before", error: &dateError)
+        if let dateError { return ToolJSON.error(dateError) }
+
+        // Resolve the person before touching the index, so a name that doesn't
+        // match is reported as a name problem rather than an index problem.
+        var scope: Set<SearchIndex.ChatRef>?
+        var personName: String?
+        if ToolJSON.string(input["person"]) != nil {
+            let person: Person
+            switch lookupPerson(input) {
+            case .reply(let json): return json
+            case .person(let match): person = match
+            }
+            personName = person.name
+            let imChats = await oneToOneChatIDs(for: person)
+            scope = Set(imChats.map { SearchIndex.ChatRef(source: .iMessage, id: $0) }
+                + person.whatsAppChatIDs.map { SearchIndex.ChatRef(source: .whatsApp, id: $0) })
+        }
+
+        // Owned by AppState, which also drives its sync — one index (and one
+        // resident matrix) for the whole app, and none at all with the flag off.
+        guard let vectors = appState.aiVectorIndex else {
+            return ToolJSON.error("semantic search is unavailable")
+        }
+        guard vectors.isReady else {
+            let indexed = vectors.indexedChunks
+            let estimate = max(indexed, Int(Double(appState.searchIndexedCount) / Self.messagesPerChunk))
+            return ToolJSON.error("semantic index is still building — \(indexed) of ~\(estimate) chunks indexed; use search_messages meanwhile")
+        }
+
+        // Same rule as the Search tab: with WhatsApp off, its messages are out.
+        let includeWhatsApp = appState.whatsAppEnabled
+        let depth = limit * Self.candidateMultiple
+        // Person scope and dates both go into the index, which applies them
+        // before its top-k — post-filtering a fixed-depth ranking would starve
+        // the semantic leg exactly when the question is narrow ("what did we
+        // say about the move, in 2016"), and leave the model with a
+        // keyword-only answer from a tool billed as meaning-match.
+        let chats = scope.map { Array($0) }
+        let semantic = await vectors.search(query, limit: depth, chats: chats, after: after, before: before)
+            .filter { hit in
+                guard let source = MessageSource(rawValue: hit.source) else { return false }
+                return includeWhatsApp || source != .whatsApp
+            }
+
+        // The FTS leg takes the same filters as query conditions, so both
+        // retrievers rank inside the same scope and the fusion compares like
+        // with like.
+        var options = SearchIndex.Options()
+        options.chats = chats
+        options.startDate = after
+        options.endDate = before
+        if !includeWhatsApp { options.source = .iMessage }
+        options.limit = depth
+        let index = appState.searchIndex
+        let keyword = await Task.detached { try? index.search(query, options: options) }.value
+
+        var entries: [Chunk] = []
+        var byChat: [SearchIndex.ChatRef: [Int]] = [:]
+        for (rank, hit) in semantic.enumerated() {
+            guard let source = MessageSource(rawValue: hit.source) else { continue }
+            // A Hit's ids are un-offset, like SearchIndex.Result.rowID; chunk
+            // bounds are `msgs.id`, so WhatsApp gets its shift back here.
+            let offset = source == .whatsApp ? Self.whatsAppIndexIDOffset : 0
+            entries.append(Chunk(source: source, chatID: hit.chatID,
+                                 firstID: hit.firstMessageID + offset, lastID: hit.lastMessageID + offset,
+                                 date: hit.date, score: Self.reciprocalRank(rank), semantic: true, keyword: false))
+            byChat[SearchIndex.ChatRef(source: source, id: hit.chatID), default: []].append(entries.count - 1)
+        }
+        // A keyword leg this thin is not a ranking. `matchExpression` ANDs every
+        // token, so a descriptive query — the kind this tool is for — matches 0
+        // or 1 rows, and that lone hit lands at rank 0, scoring exactly what the
+        // best semantic chunk does. Below two hits the fusion is semantic-only.
+        var keywordHits = keyword?.results ?? []
+        if keywordHits.count < 2 { keywordHits = [] }
+        for (rank, hit) in keywordHits.enumerated() {
+            let ref = SearchIndex.ChatRef(source: hit.source, id: hit.chatID)
+            let id = hit.rowID + (hit.source == .whatsApp ? Self.whatsAppIndexIDOffset : 0)
+            // A keyword hit inside a chunk the vectors already found is the same
+            // result twice — fuse it there rather than listing it separately.
+            if let found = byChat[ref]?.first(where: { entries[$0].firstID <= id && id <= entries[$0].lastID }) {
+                entries[found].score += Self.reciprocalRank(rank)
+                entries[found].keyword = true
+            } else {
+                entries.append(Chunk(source: hit.source, chatID: hit.chatID, firstID: id, lastID: id,
+                                     date: hit.date, score: Self.reciprocalRank(rank), semantic: false, keyword: true))
+                byChat[ref, default: []].append(entries.count - 1)
+            }
+        }
+
+        // Ties go to the semantic leg before they go to whichever is newer: two
+        // chunks at the same fused score means one was found by meaning and the
+        // other by a word that happened to appear, and this tool is billed as
+        // the former.
+        let top = Array(entries.sorted {
+            ($0.score, $0.semantic ? 1 : 0, $0.date) > ($1.score, $1.semantic ? 1 : 0, $1.date)
+        }.prefix(limit))
+        let messages = await hydrate(top)
+        let results = top.enumerated().compactMap { position, chunk -> [String: Any]? in
+            let lines = messages[position] ?? []
+            // A chunk whose messages the search index no longer holds hydrates
+            // to nothing; an empty snippet is noise, not a result.
+            guard !lines.isEmpty else { return nil }
+            var row: [String: Any] = [
+                "date": ToolJSON.timestamp(chunk.date),
+                "source": chunk.source == .whatsApp ? "whatsapp" : "imessage",
+                "origin": chunk.semantic ? (chunk.keyword ? "both" : "semantic") : "keyword",
+                "score": (chunk.score * 10000).rounded() / 10000,
+                "messages": lines.count,
+                "first_message_id": chunk.firstID,
+                "last_message_id": chunk.lastID,
+                "snippet": ToolJSON.truncate(lines.joined(separator: "\n"), Self.snippetLimit),
+            ]
+            let label = chatLabel(source: chunk.source, chatID: chunk.chatID)
+            if let name = label.name { row["person"] = name }
+            if label.isGroup { row["group"] = true }
+            return row
+        }
+
+        var payload: [String: Any] = [
+            "query": query,
+            "returned": results.count,
+            "results": results,
+        ]
+        if let personName { payload["person"] = personName }
+        if scope == nil {
+            payload["note"] = "unscoped meaning-search over the whole archive ranks poorly — pass person to make this reliable"
+        }
+        return ToolJSON.encode(payload)
+    }
+
+    /// One fused result: a run of messages in one chat, plus where it came from.
+    private struct Chunk {
+        let source: MessageSource
+        let chatID: Int64
+        let firstID: Int64
+        let lastID: Int64
+        let date: Date
+        var score: Double
+        var semantic: Bool
+        var keyword: Bool
+    }
+
+    /// Reciprocal rank fusion, k = 60, on a zero-based rank.
+    private static func reciprocalRank(_ rank: Int) -> Double {
+        1 / (60 + Double(rank) + 1)
+    }
+
+    /// Reads every chunk's messages back out of the search index in one query,
+    /// as "Me: …" / "Them: …" lines keyed by the chunk's position in `chunks`.
+    private func hydrate(_ chunks: [Chunk]) async -> [Int: [String]] {
+        guard !chunks.isEmpty else { return [:] }
+        let clauses = chunks.map {
+            "(source = '\($0.source.rawValue)' AND chat_id = \($0.chatID) AND id BETWEEN \($0.firstID) AND \($0.lastID))"
+        }
+        let sql = """
+            SELECT source, chat_id, id, is_from_me, text FROM msgs
+            WHERE \(clauses.joined(separator: " OR "))
+            ORDER BY source, chat_id, id
+            """
+        let path = appState.searchIndex.indexPath
+        // A chunk is at most 5 messages; the slack covers nothing in particular
+        // beyond a chunking rule that later grows.
+        let rowLimit = min(chunks.count * 8, 500)
+        let textLimit = Self.textLimit
+        let response = await Task.detached {
+            SQLRunner.run(path: path, query: sql, rowLimit: rowLimit, textLimit: textLimit)
+        }.value
+
+        var lines: [Int: [String]] = [:]
+        for row in (response["rows"] as? [[Any]]) ?? [] where row.count == 5 {
+            guard let sourceRaw = row[0] as? String, let source = MessageSource(rawValue: sourceRaw),
+                  let chatID = row[1] as? Int, let id = row[2] as? Int,
+                  let fromMe = row[3] as? Int, let text = row[4] as? String else { continue }
+            guard let position = chunks.firstIndex(where: {
+                $0.source == source && $0.chatID == Int64(chatID) && $0.firstID <= Int64(id) && Int64(id) <= $0.lastID
+            }) else { continue }
+            lines[position, default: []].append((fromMe == 1 ? "Me: " : "Them: ") + text)
+        }
+        return lines
     }
 
     // MARK: - read_transcript
@@ -362,6 +576,18 @@ final class AIToolbox {
             "last_message": ToolJSON.timestamp(person.lastDate),
             "days_since_last_message": person.daysSinceLastMessage,
         ]
+    }
+
+    /// Who a chat belongs to, for results that carry a chat id rather than a
+    /// person: the resolved name where the app has one, and whether it's a group.
+    private func chatLabel(source: MessageSource, chatID: Int64) -> (name: String?, isGroup: Bool) {
+        if source == .whatsApp {
+            return (appState.whatsAppConvoBySessionID[chatID]?.resolvedName, false)
+        }
+        guard let info = appState.chatInfoByID[chatID] else { return (nil, false) }
+        if info.isGroup { return (info.displayName ?? "Group chat", true) }
+        guard let handleID = info.handleID else { return (nil, false) }
+        return (appState.iMessageConvoByHandleID[handleID]?.resolvedName, false)
     }
 
     /// Screenshot mode never lets a raw phone number or email reach a result,

@@ -29,6 +29,7 @@
 		A10000010000000000000023 /* AITools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000023 /* AITools.swift */; };
 		A10000010000000000000024 /* AIUsageLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000024 /* AIUsageLog.swift */; };
 		A10000010000000000000026 /* AIChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000026 /* AIChatStore.swift */; };
+		A10000010000000000000027 /* AIVectorIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000027 /* AIVectorIndex.swift */; };
 		A10000010000000000000025 /* AIChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000025 /* AIChatView.swift */; };
 /* End PBXBuildFile section */
 
@@ -56,6 +57,7 @@
 		A20000010000000000000023 /* AITools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AITools.swift; sourceTree = "<group>"; };
 		A20000010000000000000024 /* AIUsageLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsageLog.swift; sourceTree = "<group>"; };
 		A20000010000000000000026 /* AIChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatStore.swift; sourceTree = "<group>"; };
+		A20000010000000000000027 /* AIVectorIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIVectorIndex.swift; sourceTree = "<group>"; };
 		A20000010000000000000025 /* AIChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatView.swift; sourceTree = "<group>"; };
 		A30000010000000000000001 /* Besties.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Besties.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -119,6 +121,7 @@
 				A20000010000000000000023 /* AITools.swift */,
 				A20000010000000000000024 /* AIUsageLog.swift */,
 				A20000010000000000000026 /* AIChatStore.swift */,
+				A20000010000000000000027 /* AIVectorIndex.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -241,6 +244,7 @@
 				A10000010000000000000023 /* AITools.swift in Sources */,
 				A10000010000000000000024 /* AIUsageLog.swift in Sources */,
 				A10000010000000000000026 /* AIChatStore.swift in Sources */,
+				A10000010000000000000027 /* AIVectorIndex.swift in Sources */,
 				A10000010000000000000025 /* AIChatView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

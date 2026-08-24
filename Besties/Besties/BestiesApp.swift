@@ -204,6 +204,10 @@ final class AppState {
 
     // Full-content search: sidecar FTS index, synced in the background on launch.
     let searchIndex = SearchIndex()
+    /// Phase-2 semantic index, built from the FTS index once it has synced.
+    /// nil unless the prototype flag is on, so `vec.sqlite` never exists for
+    /// anyone else.
+    let aiVectorIndex: AIVectorIndex? = AIPrototype.isEnabled ? AIVectorIndex() : nil
     var searchProgress: (done: Int, total: Int)?
     var searchIndexedCount = 0
     var chatInfoByID: [Int64: MessageStore.ChatInfo] = [:]
@@ -338,6 +342,9 @@ final class AppState {
             // can't land after this and leave the UI stuck "Rebuilding…".
             DispatchQueue.main.async { self.searchProgress = nil }
             self.searchIndexedCount = await Task.detached { index.indexedCount() }.value
+            // The semantic index chunks the rows this sync just wrote, so it
+            // only starts once that is done.
+            await self.aiVectorIndex?.sync()
         }
     }
 

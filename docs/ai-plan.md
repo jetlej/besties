@@ -97,24 +97,68 @@ Search tab / All Time numbers, which are already trusted).
 Only starts if Phase 1's recall questions are the weak spot (expected: FTS
 misses paraphrases — "that ramen place" vs. the actual words used).
 
+Built as `Services/AIVectorIndex.swift` + the `semantic_search` tool in
+`AITools.swift`. What shipped, and where it deviates from the sketch above:
+
 1. On-device embeddings — no text leaves the Mac to build the index.
-   Candidate A: `NLContextualEmbedding` (built into macOS, zero deps).
-   Candidate B: a small sentence-embedding model via MLX. Decide with a
-   50-query bake-off over indexed real data; A wins ties (no dependency).
-2. Chunking: single texts are too short to embed well. Chunk = up to 10
-   consecutive messages from one conversation within a 3-hour window, stored
-   as (chunk_id, source, chat_id, first/last msg id, date). Est. ~150–250k
-   chunks for 1.15M messages.
-3. Storage: `vec.sqlite` sidecar next to `search.sqlite`, using `sqlite-vec`
-   (`vec0` virtual table). Incremental cursor sync mirroring
-   `SearchIndex.swift` (schema_version, batch transactions, resumable).
-   Budget per search-plan.md's ~4× estimate: ~500 MB. First build is a
-   background job with progress in Settings; measure wall-clock on the real
-   1.15M — if it exceeds ~30 min, ship Phase 2 gated on an opt-in toggle.
+   **Shipped: `NLEmbedding.sentenceEmbedding(for: .english)`, 512 dims.** It
+   beat `NLContextualEmbedding` in the spike on the only axis that mattered
+   here (it needs no one-time Apple asset download, and its recall was not
+   worse), and MLX was never worth a dependency. Measured 91.5 embeddings/s
+   sustained across 8 workers on an M3 Pro → **~54 min for a first full build**
+   of the real 1.1M-message archive. Incremental syncs after that are seconds.
+2. Chunking: consecutive messages of one conversation within a 3-hour window,
+   stored as (id = first msg id, source, chat_id, last_msg_id, date, vec).
+   Two deviations from the sketch, both forced by measurement:
+   - **5 messages per chunk, not 10.** `NLEmbedding` pools word vectors, so a
+     longer chunk averages away any single topic in it. Query = a known
+     message's own text, scored against every chunk of its conversation, over
+     four real conversations: its chunk is in the top ten **56% of the time at
+     10 messages, 79% at 5, 90% at 3**. Three would cost 429k chunks / ~78 min
+     / 878 MB resident, which is past what can be kicked off unprompted; five
+     costs 299,158 chunks / ~54 min / 613 MB against ten's 206k / ~38 min /
+     423 MB.
+   - **The 3-hour window is symmetric.** `msgs.id` is arrival order, not date
+     order: 139,019 messages (12.7%) are older than the previous message in
+     the same chat, 39,046 of them by more than 3 hours. A forward-only gap
+     check let those into the open chunk, so 17% of chunks contained a >3h
+     jump backwards and 6.7% were dated more than a day away from their own
+     contents (worst case: three messages spanning 2020→2024). Comparing the
+     absolute gap costs +20% chunks and caps the longest chunk at ten hours
+     instead of 1,307 days. A chunk's stored `date` is its **earliest**
+     message, not its first by id.
+   A chunk also closes at the 10k-message batch boundary, which is what makes
+   the resume cursor honest (an interrupted build resumes at the same boundary
+   and produces the same chunks); at 10 messages that cost +0.7% chunks. The
+   embedded text is the raw messages joined by spaces — "Me:"/"Them:" prefixes
+   measured 21% slower to embed with no recall gain, so they live only in what
+   the tool hands back.
+3. Storage: `vec.sqlite` sidecar next to `search.sqlite`, incremental cursor
+   sync mirroring `SearchIndex.swift` (schema_version + model id, batch
+   transactions, resumable, per-source reset on rewind). **Deviation: no
+   sqlite-vec / `vec0`** — vectors are unit-normalized Float32 BLOBs in a plain
+   table, and search is a brute-force cosine scan (one `vDSP_mmul` from
+   Accelerate) over the matrix loaded into memory on first search. At 300k ×
+   512 that is ~610 MB resident and **~14 ms per query** — fast enough that an
+   ANN index would only have bought a dependency. `PRAGMA page_size = 16384`
+   keeps a 2 KB vector row off overflow pages (measured at 172k chunks: 388 MB
+   on disk instead of 677 MB). Kicked off from `AppState` after the FTS sync,
+   gated on
+   `AIPrototype.isEnabled` — with the flag off the object is never created and
+   `vec.sqlite` never exists.
 4. New tool `semantic_search(query, person?, after?, before?, limit=15)`:
-   embed the query, ANN top-k from vec0, fuse with a parallel FTS bm25 query
-   (reciprocal-rank fusion), return snippets + ids. `search_messages` stays —
-   the model picks exact-match vs. meaning-match per question.
+   embed the query, top-k by cosine, fuse with a parallel FTS bm25 query
+   (reciprocal-rank fusion, k=60), hydrate each survivor back into readable
+   messages from `search.sqlite`. `search_messages` stays — the model picks
+   exact-match vs. meaning-match per question. **Deviation: the index takes the
+   scope** (`search(_:limit:chats:after:before:)`) — person *and* dates are
+   applied before its top-k, so a narrow question ("the move, in 2016") gets
+   the best fifteen chunks inside that scope rather than whatever survives a
+   global top-k. The tool description and system
+   prompt both push the model to always pass `person`: unscoped meaning-search
+   over 1.1M messages is noise (spike: 0/15 queries found the target in the top
+   ten unscoped, 8/15 scoped to the right relationship; median global rank
+   ~5,400 for chunks that rank ~7 inside their own conversation).
 
 Verify: a fixed 20-question recall set (below) where the FTS-only Phase 1
 build failed; Phase 2 must convert ≥ half of the misses.

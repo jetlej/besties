@@ -114,8 +114,14 @@ final class AIChatSession {
                 var results: [[String: Any]] = []
                 for call in turn.toolCalls {
                     onEvent(.toolStarted(name: call.name, summary: Self.summary(name: call.name, input: call.input)))
-                    let output = await toolbox.execute(name: call.name, input: call.input)
+                    var output = await toolbox.execute(name: call.name, input: call.input)
                     onEvent(.toolFinished(name: call.name))
+                    // Oversized results stay in the conversation for every later
+                    // round, so cap them — the model can always re-query narrower.
+                    if output.count > 30_000 {
+                        output = String(output.prefix(30_000))
+                            + "\n…[truncated — the full result was \(output.count) characters; run a narrower query]"
+                    }
                     results.append(["type": "tool_result", "tool_use_id": call.id, "content": output])
                 }
                 // Every tool_result for one assistant turn goes back in a single
@@ -158,6 +164,20 @@ final class AIChatSession {
     }
 
     private func streamTurn(onEvent: @escaping (AIStreamEvent) -> Void) async throws -> Turn {
+        // Moving cache breakpoint on the last content block: each round then
+        // re-reads the whole prior conversation at the cached rate instead of
+        // full input price — on long tool loops that is most of the bill.
+        // (Value semantics: this never mutates the stored history.)
+        var requestMessages = messages
+        if var last = requestMessages.last,
+           var content = last["content"] as? [[String: Any]],
+           var block = content.last {
+            block["cache_control"] = ["type": "ephemeral"]
+            content[content.count - 1] = block
+            last["content"] = content
+            requestMessages[requestMessages.count - 1] = last
+        }
+
         var body: [String: Any] = [
             "model": Self.model,
             "max_tokens": Self.maxTokens,
@@ -167,7 +187,7 @@ final class AIChatSession {
                 "text": AIPrompt.systemPrompt,
                 "cache_control": ["type": "ephemeral"],
             ]],
-            "messages": messages,
+            "messages": requestMessages,
         ]
         let tools = toolbox.toolDefinitions
         if !tools.isEmpty { body["tools"] = tools }
@@ -337,6 +357,9 @@ final class AIChatSession {
         case "search_messages":
             let query = arg("query") ?? ""
             return arg("person").map { "searched \"\(query)\" with \($0)" } ?? "searched \"\(query)\""
+        case "semantic_search":
+            let query = arg("query") ?? ""
+            return arg("person").map { "recalled \"\(query)\" with \($0)" } ?? "recalled \"\(query)\""
         case "read_transcript":
             return "read messages with \(arg("person") ?? "someone")"
         case "person_summary":
