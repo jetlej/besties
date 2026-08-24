@@ -6,6 +6,14 @@ enum Tab: String, CaseIterable {
     case timeMachine = "Time Machine"
     case reconnect = "Reconnect"
     case search = "Search"
+    case ai = "AI"
+
+    /// The AI prototype tab exists only behind its defaults flag, so the tab
+    /// bar and the ⌘-number menu both drop it when the flag is off.
+    static var allCases: [Tab] {
+        let base: [Tab] = [.allTime, .timeMachine, .reconnect, .search]
+        return AIPrototype.isEnabled ? base + [.ai] : base
+    }
 
     var systemImage: String {
         switch self {
@@ -13,6 +21,7 @@ enum Tab: String, CaseIterable {
         case .timeMachine: "clock.arrow.circlepath"
         case .reconnect: "bubble.left.and.bubble.right.fill"
         case .search: "magnifyingglass"
+        case .ai: "sparkles"
         }
     }
 
@@ -23,21 +32,31 @@ enum Tab: String, CaseIterable {
         case .timeMachine: "Rewind month by month"
         case .reconnect: "Who's worth a text"
         case .search: "Find any message by keyword"
+        case .ai: "Ask anything about your messages"
         }
     }
 }
 
 /// The full-width tab bar: icon + title with a one-line description inside
 /// each tab, on a flat gray track, sun pill sliding to the selection.
-/// Descriptions drop at narrow widths so the titles never truncate.
+/// ViewThatFits picks the richest variant whose *untruncated* text fits —
+/// blurbs, then titles, then icon-only — so labels never wrap or ellipsize:
+/// the moment a full title wouldn't fit, the whole bar is already icons.
 struct TabBar: View {
     @Binding var selection: Tab
-    var showDescriptions = true
     @Namespace private var pillNS
     @State private var hovered: Tab?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            bar(labels: true, blurbs: true)
+            bar(labels: true, blurbs: false)
+            bar(labels: false, blurbs: false)
+        }
+    }
+
+    private func bar(labels: Bool, blurbs: Bool) -> some View {
         HStack(spacing: 2) {
             ForEach(Tab.allCases, id: \.self) { tab in
                 Button {
@@ -48,17 +67,22 @@ struct TabBar: View {
                     }
                 } label: {
                     VStack(spacing: 1) {
-                        HStack(spacing: 5) {
+                        HStack(spacing: 6) {
                             Image(systemName: tab.systemImage)
-                                .font(.system(size: 12, weight: .semibold))
-                            Text(tab.rawValue)
-                                .font(.callout.weight(.semibold))
+                                .font(.system(size: 15, weight: .bold))
+                            if labels {
+                                Text(tab.rawValue)
+                                    .font(.system(size: 15, weight: .bold))
+                                    .lineLimit(1)
+                                    .fixedSize()
+                            }
                         }
-                        if showDescriptions {
+                        if blurbs {
                             Text(tab.blurb)
                                 .font(.caption2)
                                 .foregroundStyle(Color.ink.opacity(selection == tab ? 0.72 : 0.45))
                                 .lineLimit(1)
+                                .fixedSize()
                         }
                     }
                     .padding(.vertical, 6)
@@ -78,6 +102,7 @@ struct TabBar: View {
                     .contentShape(RoundedRectangle(cornerRadius: 9))
                 }
                 .buttonStyle(.plain)
+                .help(labels ? "" : tab.rawValue)
                 .onHover { inside in
                     if inside { hovered = tab } else if hovered == tab { hovered = nil }
                 }
@@ -131,7 +156,6 @@ struct ContentView: View {
     @State private var showChart = true
     @State private var readerTarget: ReaderTarget?
     @State private var searchText = ""
-    @State private var headerWidth: CGFloat = 0
     @State private var sortOrder = [KeyPathComparator(\Conversation.score, order: .reverse)]
 
     private static let searchFieldWidth: CGFloat = 220
@@ -191,8 +215,7 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 8) {
-                TabBar(selection: $selectedTab, showDescriptions: headerWidth == 0 || headerWidth >= 560)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { headerWidth = $0 }
+                TabBar(selection: $selectedTab)
 
             }
             .padding(.horizontal, 16)
@@ -269,6 +292,8 @@ struct ContentView: View {
                                 openGroupReader(chatID: chatID, name: name, anchorDate: date, anchorMessageID: messageID, highlightTerms: terms)
                             }
                         )
+                    case .ai:
+                        AIChatView(appState: appState)
                     }
                 }
             }

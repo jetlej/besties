@@ -24,6 +24,12 @@
 		A10000010000000000000019 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000019 /* SearchView.swift */; };
 		A10000010000000000000015 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000015 /* SettingsView.swift */; };
 		A10000010000000000000020 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AC0000010000000000000001 /* Sparkle */; };
+		A10000010000000000000021 /* AIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000021 /* AIClient.swift */; };
+		A10000010000000000000022 /* AIPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000022 /* AIPrompt.swift */; };
+		A10000010000000000000023 /* AITools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000023 /* AITools.swift */; };
+		A10000010000000000000024 /* AIUsageLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000024 /* AIUsageLog.swift */; };
+		A10000010000000000000026 /* AIChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000026 /* AIChatStore.swift */; };
+		A10000010000000000000025 /* AIChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000025 /* AIChatView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +51,12 @@
 		A20000010000000000000019 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		A20000010000000000000015 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A20000010000000000000020 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20000010000000000000021 /* AIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIClient.swift; sourceTree = "<group>"; };
+		A20000010000000000000022 /* AIPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPrompt.swift; sourceTree = "<group>"; };
+		A20000010000000000000023 /* AITools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AITools.swift; sourceTree = "<group>"; };
+		A20000010000000000000024 /* AIUsageLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIUsageLog.swift; sourceTree = "<group>"; };
+		A20000010000000000000026 /* AIChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatStore.swift; sourceTree = "<group>"; };
+		A20000010000000000000025 /* AIChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatView.swift; sourceTree = "<group>"; };
 		A30000010000000000000001 /* Besties.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Besties.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -102,6 +114,11 @@
 				A20000010000000000000004 /* ConversationAnalyzer.swift */,
 				A20000010000000000000005 /* ContactResolver.swift */,
 				A20000010000000000000006 /* PermissionChecker.swift */,
+				A20000010000000000000021 /* AIClient.swift */,
+				A20000010000000000000022 /* AIPrompt.swift */,
+				A20000010000000000000023 /* AITools.swift */,
+				A20000010000000000000024 /* AIUsageLog.swift */,
+				A20000010000000000000026 /* AIChatStore.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -114,6 +131,7 @@
 				A20000010000000000000013 /* ConversationReaderView.swift */,
 				A20000010000000000000015 /* SettingsView.swift */,
 				A20000010000000000000019 /* SearchView.swift */,
+				A20000010000000000000025 /* AIChatView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -218,6 +236,12 @@
 				A10000010000000000000008 /* ContentView.swift in Sources */,
 				A10000010000000000000012 /* ChatMessage.swift in Sources */,
 				A10000010000000000000013 /* ConversationReaderView.swift in Sources */,
+				A10000010000000000000021 /* AIClient.swift in Sources */,
+				A10000010000000000000022 /* AIPrompt.swift in Sources */,
+				A10000010000000000000023 /* AITools.swift in Sources */,
+				A10000010000000000000024 /* AIUsageLog.swift in Sources */,
+				A10000010000000000000026 /* AIChatStore.swift in Sources */,
+				A10000010000000000000025 /* AIChatView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
