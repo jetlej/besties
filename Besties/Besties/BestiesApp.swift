@@ -218,6 +218,9 @@ final class AppState {
     var searchFocusRequest = 0
     /// Set by the ⌘1–⌘4 menu items; ContentView consumes it and resets to nil.
     var requestedTab: Tab?
+    /// A packaged moment to open as soon as the AI tab appears (Reconnect's ✨
+    /// button); AIChatView consumes it and resets to nil.
+    var aiReportRequest: AIReportKind?
     @ObservationIgnored private var searchSyncStarted = false
 
     private let messageStore = MessageStore()

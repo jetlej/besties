@@ -173,7 +173,7 @@ private final class AIChatModel {
         case .turnCompleted(let turnID, let usage, let stopReason):
             let latency = Int(Date().timeIntervalSince(turnStartedAt) * 1000)
             items.append(ChatItem(role: .footer, usage: usage, stopReason: stopReason))
-            AIUsageLog.record(turnID: turnID, usage: usage, stopReason: stopReason,
+            AIUsageLog.record(turnID: turnID, source: "chat", usage: usage, stopReason: stopReason,
                               latencyMs: latency, toolCallCount: turnToolCalls)
             persist()
 
@@ -183,10 +183,20 @@ private final class AIChatModel {
     }
 }
 
+/// A report the view is showing. `AIReportKind` isn't Identifiable (and two
+/// runs of the same kind are two different sheets), so it rides in a wrapper.
+private struct ReportRequest: Identifiable {
+    let id = UUID()
+    let kind: AIReportKind
+}
+
 struct AIChatView: View {
     let appState: AppState
     @State private var model: AIChatModel
     @FocusState private var inputFocused: Bool
+    @State private var momentPicker: AIMomentPicker.Moment?
+    @State private var pendingKind: AIReportKind?
+    @State private var reportRequest: ReportRequest?
 
     init(appState: AppState) {
         self.appState = appState
@@ -202,6 +212,38 @@ struct AIChatView: View {
             }
         }
         .background(Color.paper)
+        // Reconnect's ✨ button switches to this tab and leaves a request
+        // behind; the tab is built fresh on the switch, so both the arrival
+        // and any later request have to be picked up.
+        .task { consumeReportRequest() }
+        .onChange(of: appState.aiReportRequest) { consumeReportRequest() }
+        // The report is presented from the picker's onDismiss, not from the
+        // pick itself: swapping one sheet for another in a single update drops
+        // the second one.
+        .sheet(item: $momentPicker, onDismiss: {
+            guard let kind = pendingKind else { return }
+            pendingKind = nil
+            reportRequest = ReportRequest(kind: kind)
+        }) { moment in
+            AIMomentPicker(appState: appState, moment: moment) { kind in
+                pendingKind = kind
+                momentPicker = nil
+            }
+        }
+        .sheet(item: $reportRequest) { request in
+            AIReportView(appState: appState, kind: request.kind)
+                .frame(minWidth: 520, idealWidth: 620, minHeight: 520, idealHeight: 720)
+        }
+    }
+
+    private func consumeReportRequest() {
+        guard let kind = appState.aiReportRequest else { return }
+        appState.aiReportRequest = nil
+        // Without a key the report could only fail on its first request, and
+        // this tab is already showing the setup hint — so drop the request
+        // (cleared above, so it doesn't fire again) and leave the hint up.
+        guard !AIPrototype.apiKey.isEmpty else { return }
+        reportRequest = ReportRequest(kind: kind)
     }
 
     // MARK: - Chat
@@ -403,26 +445,85 @@ struct AIChatView: View {
                 .font(.system(size: 30, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.ink)
                 .multilineTextAlignment(.center)
-            FlowLayout(spacing: 8) {
-                ForEach(Self.suggestions, id: \.prompt) { suggestion in
-                    Button {
-                        model.draft = suggestion.prompt
-                        model.send()
-                    } label: {
-                        Text("\(suggestion.emoji) \(suggestion.prompt)")
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(Color.ink)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 8)
-                            .background(suggestion.tint.opacity(0.22), in: Capsule())
-                            .overlay(Capsule().strokeBorder(suggestion.tint.opacity(0.5)))
+            moments
+                .frame(maxWidth: 500)
+
+            VStack(spacing: 10) {
+                Text("Or just ask")
+                    .font(.caption)
+                    .foregroundStyle(Color.ink.opacity(0.45))
+                FlowLayout(spacing: 8) {
+                    ForEach(Self.suggestions, id: \.prompt) { suggestion in
+                        Button {
+                            model.draft = suggestion.prompt
+                            model.send()
+                        } label: {
+                            Text("\(suggestion.emoji) \(suggestion.prompt)")
+                                .font(.callout.weight(.medium))
+                                .foregroundStyle(Color.ink)
+                                .padding(.horizontal, 13)
+                                .padding(.vertical, 8)
+                                .background(suggestion.tint.opacity(0.22), in: Capsule())
+                                .overlay(Capsule().strokeBorder(suggestion.tint.opacity(0.5)))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .frame(maxWidth: 500)
         }
         .padding(24)
+    }
+
+    private static let momentCards: [(moment: AIMomentPicker.Moment, emoji: String, title: String, blurb: String, tint: Color)] = [
+        (.wrapped, "🎁", "Besties Wrapped",
+         "All your messages, one year in review — top people, busiest day, phrase of the year.",
+         .sun),
+        (.biography, "💛", "Friendship Wrapped",
+         "One friendship, wrapped — how it started, your eras, inside jokes, and the longest silence.",
+         .purple),
+        (.reconnect, "👋", "Reconnect Draft",
+         "Reads where you two left off, then writes ready-to-send openers in your voice.",
+         .brandBlue),
+    ]
+
+    /// The packaged moments: one tap, then a year or a person, then a report.
+    private var moments: some View {
+        VStack(spacing: 8) {
+            Text("Make something worth screenshotting")
+                .font(.caption)
+                .foregroundStyle(Color.ink.opacity(0.45))
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(Self.momentCards, id: \.moment) { card in
+                    Button {
+                        momentPicker = card.moment
+                    } label: {
+                        VStack(spacing: 4) {
+                            Text(card.emoji)
+                                .font(.system(size: 24))
+                            Text(card.title)
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(Color.ink)
+                                .multilineTextAlignment(.center)
+                            Text(card.blurb)
+                                .font(.caption2)
+                                .foregroundStyle(Color.ink.opacity(0.5))
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .padding(.vertical, 13)
+                        .padding(.horizontal, 8)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
+                        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(card.tint.opacity(0.45), lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            // Equal-height cards: the HStack sizes to its tallest child and
+            // the others stretch to match.
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     // MARK: - Composer
@@ -485,157 +586,5 @@ struct AIChatView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-/// Renders assistant markdown with real block layout — tables, lists, and
-/// headings — since Text's inline parsing leaves them as raw symbols.
-private struct MarkdownBody: View {
-    let text: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(Self.blocks(text).enumerated()), id: \.offset) { _, block in
-                blockView(block)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func blockView(_ block: Block) -> some View {
-        switch block {
-        case .paragraph(let content):
-            Text(content)
-        case .heading(let content, let level):
-            Text(content)
-                .font(level <= 1 ? .title3.bold() : level == 2 ? .headline : .subheadline.bold())
-                .padding(.top, 2)
-        case .items(let items):
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(item.marker)
-                            .foregroundStyle(Color.ink.opacity(0.5))
-                        Text(item.content)
-                    }
-                }
-            }
-        case .table(let header, let rows):
-            ScrollView(.horizontal, showsIndicators: false) {
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-                    GridRow {
-                        ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                            Text(cell).font(.callout.weight(.semibold))
-                        }
-                    }
-                    Divider()
-                    ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                        GridRow {
-                            ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                                Text(cell)
-                            }
-                        }
-                        if index < rows.count - 1 { Divider() }
-                    }
-                }
-                .padding(10)
-            }
-            .background(Color.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-        }
-    }
-
-    // MARK: - Parsing
-
-    private enum Block {
-        case paragraph(AttributedString)
-        case heading(AttributedString, level: Int)
-        case items([(marker: String, content: AttributedString)])
-        case table(header: [AttributedString], rows: [[AttributedString]])
-    }
-
-    /// Inline markdown (bold/italic/code) with line breaks preserved.
-    private static func inline(_ text: String) -> AttributedString {
-        (try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
-    }
-
-    private static func blocks(_ text: String) -> [Block] {
-        var blocks: [Block] = []
-        var paragraph: [String] = []
-        var items: [(String, String)] = []
-        var table: [String] = []
-
-        func flushParagraph() {
-            guard !paragraph.isEmpty else { return }
-            blocks.append(.paragraph(inline(paragraph.joined(separator: "\n"))))
-            paragraph = []
-        }
-        func flushItems() {
-            guard !items.isEmpty else { return }
-            blocks.append(.items(items.map { (marker: $0.0, content: inline($0.1)) }))
-            items = []
-        }
-        func flushTable() {
-            guard !table.isEmpty else { return }
-            defer { table = [] }
-            let rows = table.map { line in
-                line.trimmingCharacters(in: CharacterSet(charactersIn: "| "))
-                    .components(separatedBy: "|")
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-            }
-            // A real table has a |---|---| separator as its second line.
-            let hasSeparator = rows.count >= 2 && rows[1].allSatisfy { cell in
-                !cell.isEmpty && cell.allSatisfy { "-: ".contains($0) }
-            }
-            guard hasSeparator else {
-                blocks.append(.paragraph(inline(table.joined(separator: "\n"))))
-                return
-            }
-            let width = rows[0].count
-            let bodyRows = rows.dropFirst(2).map { row -> [AttributedString] in
-                var cells = row.map(inline)
-                while cells.count < width { cells.append(AttributedString("")) }
-                return Array(cells.prefix(width))
-            }
-            blocks.append(.table(header: rows[0].map(inline), rows: bodyRows))
-        }
-
-        for rawLine in text.components(separatedBy: "\n") {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("|") {
-                flushParagraph(); flushItems()
-                table.append(line)
-                continue
-            }
-            flushTable()
-            if line.isEmpty {
-                flushParagraph(); flushItems()
-                continue
-            }
-            if line.hasPrefix("#") {
-                flushParagraph(); flushItems()
-                let level = line.prefix(while: { $0 == "#" }).count
-                let content = line.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces)
-                blocks.append(.heading(inline(content), level: level))
-                continue
-            }
-            if line.hasPrefix("- ") || line.hasPrefix("* ") {
-                flushParagraph()
-                items.append(("•", String(line.dropFirst(2))))
-                continue
-            }
-            if let marker = line.range(of: #"^\d{1,3}[.)] "#, options: .regularExpression) {
-                flushParagraph()
-                items.append((String(line[..<marker.upperBound]).trimmingCharacters(in: .whitespaces),
-                              String(line[marker.upperBound...])))
-                continue
-            }
-            flushItems()
-            paragraph.append(rawLine)
-        }
-        flushTable(); flushItems(); flushParagraph()
-        return blocks
     }
 }

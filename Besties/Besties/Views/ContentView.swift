@@ -160,6 +160,10 @@ struct ContentView: View {
 
     private static let searchFieldWidth: CGFloat = 220
 
+    /// The ✨ column: the prototype flag alone isn't enough, since a run without
+    /// an API key can only ever land on the setup hint.
+    private static let showsAIActions = AIPrototype.isEnabled && !AIPrototype.apiKey.isEmpty
+
     /// The people filter, right-aligned directly above whichever list it filters.
     private var filterRow: some View {
         HStack {
@@ -526,15 +530,28 @@ struct ContentView: View {
             .width(min: 40, ideal: 40, max: 50)
 
             TableColumn("") { convo in
-                Button {
-                    openInMessages(handle: convo.handle, source: convo.source)
-                } label: {
-                    Image(systemName: "bubble.left.fill")
+                HStack(spacing: 4) {
+                    if Self.showsAIActions {
+                        Button {
+                            appState.aiReportRequest = .reconnectDraft(person: convo.mergeKey)
+                            appState.requestedTab = .ai
+                        } label: {
+                            Image(systemName: "sparkles")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help("Draft a text to \(convo.resolvedName)")
+                    }
+                    Button {
+                        openInMessages(handle: convo.handle, source: convo.source)
+                    } label: {
+                        Image(systemName: "bubble.left.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
             }
-            .width(30)
+            .width(Self.showsAIActions ? 64 : 30)
         }
         .scrollContentBackground(.hidden)
         .alternatingRowBackgrounds(.disabled)
@@ -584,17 +601,20 @@ struct ContentView: View {
         }
     }
 
-    private func openInMessages(handle: String, source: MessageSource) {
-        if source == .whatsApp {
-            if let url = URL(string: "whatsapp://send?phone=\(handle.filter(\.isNumber))") {
-                NSWorkspace.shared.open(url)
-            }
-            return
-        }
-        let cleaned = handle.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? handle
-        if let url = URL(string: "imessage://\(cleaned)") {
+}
+
+/// Opens a thread with someone in Messages (or WhatsApp). Top-level so the AI
+/// report drafts can hand off to the same plumbing the leaderboard rows use.
+func openInMessages(handle: String, source: MessageSource) {
+    if source == .whatsApp {
+        if let url = URL(string: "whatsapp://send?phone=\(handle.filter(\.isNumber))") {
             NSWorkspace.shared.open(url)
         }
+        return
+    }
+    let cleaned = handle.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? handle
+    if let url = URL(string: "imessage://\(cleaned)") {
+        NSWorkspace.shared.open(url)
     }
 }
 

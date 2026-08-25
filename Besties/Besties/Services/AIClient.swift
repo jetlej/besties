@@ -18,69 +18,92 @@ enum AIStreamEvent {
     case failed(message: String)
 }
 
-/// One in-memory conversation with the Anthropic Messages API, streaming over
-/// SSE and running the tool loop against `AIToolbox`. The session owns the raw
-/// API `messages` array; the system prompt is the top-level `system` field (a
-/// cached, frozen prefix), so today's date rides on the user turn instead.
+/// The SSE streaming client and the tool loop, shared by the chat and by the
+/// packaged reports. One instance owns one raw API `messages` array; what the
+/// two callers differ on lives in `Config` — the system prompt (the top-level
+/// `system` field: a cached, frozen prefix, so today's date rides on the user
+/// turn instead), the token ceiling, and whether one tool ends the run rather
+/// than being executed.
 @MainActor
-final class AIChatSession {
+final class AIToolLoop {
+    struct Config {
+        var systemPrompt: String
+        var maxTokens: Int
+        /// Definitions appended to the toolbox's own — tools this loop answers
+        /// itself rather than dispatching to `AIToolbox`.
+        var extraTools: [[String: Any]] = []
+        /// A tool_use for this name ends the run: the caller gets its input and
+        /// no tool_result goes back, so the model's last word can be structured.
+        var terminalTool: String?
+        /// Runaway guard: a well-behaved answer needs a handful of tool rounds.
+        var maxToolRounds = 25
+    }
+
+    /// The terminal tool's call. `id` is what a continuation has to answer with
+    /// a tool_result, since the assistant turn holding it is already in history.
+    struct TerminalCall {
+        let id: String
+        let input: [String: Any]
+    }
+
+    struct Outcome {
+        var stopReason = "end_turn"
+        var usage = AIUsage()
+        var toolCallCount = 0
+        var terminal: TerminalCall?
+        /// Every tool_use id in the assistant turn that ended the run: the
+        /// terminal call's own, plus anything the model asked for alongside it.
+        /// None were executed, and the API needs a tool_result for *every* one of
+        /// them in the next user message — answering only the terminal call makes
+        /// the continuation invalid.
+        var unansweredToolIDs: [String] = []
+        /// True when `.failed` was emitted. The history is unusable past this
+        /// point; the caller owns what to roll back to.
+        var failed = false
+    }
+
     private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
     private static let model = "claude-opus-5"
-    private static let maxTokens = 16_000
-    /// Runaway guard: a well-behaved answer needs a handful of tool rounds.
-    private static let maxToolRounds = 25
 
     private let apiKey: String
     private let toolbox: AIToolbox
-    private var messages: [[String: Any]] = []
+    private let config: Config
 
-    private(set) var isRunning = false
+    /// The raw API history — JSON-serializable by construction. The caller
+    /// appends the user turn before `run` and decides what to keep after it.
+    var messages: [[String: Any]] = []
 
-    init(apiKey: String, toolbox: AIToolbox) {
+    /// `AIUsageLog` numbers requests within a turn, and one turn can span more
+    /// than one `run` (a report that needs a nudge), so the counters follow the
+    /// turn id rather than the call — including the runaway guard, or a nudged
+    /// report would get `maxToolRounds` all over again.
+    private var sequenceTurnID: UUID?
+    private var sequence = 0
+    private var rounds = 0
+
+    init(apiKey: String, toolbox: AIToolbox, config: Config) {
         self.apiKey = apiKey
         self.toolbox = toolbox
+        self.config = config
     }
 
-    func reset() {
-        messages.removeAll()
-    }
+    /// Streams turns and runs tools until the model stops asking for them.
+    /// Never throws: every failure arrives as `.failed` and sets `failed`.
+    /// `.turnCompleted` is the caller's to emit — it owns the turn.
+    func run(turnID: UUID, onEvent: @escaping (AIStreamEvent) -> Void) async -> Outcome {
+        if sequenceTurnID != turnID {
+            sequenceTurnID = turnID
+            sequence = 0
+            rounds = 0
+        }
 
-    /// The raw API history, for persistence — JSON-serializable by construction.
-    var history: [[String: Any]] { messages }
+        var outcome = Outcome()
 
-    /// Swaps in a previously saved history so a reopened chat keeps its context.
-    func restore(history: [[String: Any]]) {
-        guard !isRunning else { return }
-        messages = history
-    }
-
-    /// Asks one question and runs the whole tool loop, emitting events as they
-    /// stream. Never throws: every failure arrives as `.failed`. On failure the
-    /// history is rolled back to before the question, so a retry starts clean.
-    func ask(_ text: String, onEvent: @escaping (AIStreamEvent) -> Void) async {
-        guard !isRunning else { return }
-        isRunning = true
-        defer { isRunning = false }
-
-        let snapshot = messages
-        messages.append([
-            "role": "user",
-            "content": [["type": "text", "text": "(Today is \(Self.today()).) " + text]],
-        ])
-
-        let turnID = UUID()
-        var usage = AIUsage()
-        var rounds = 0
-        var requests = 0
-
-        // Any exit that isn't a finished answer leaves the history unusable — an
-        // assistant turn holding tool_use blocks with no tool_result after it, or
-        // a block the stream cut in half — and the API rejects every later turn.
-        // Roll back to before the question instead.
-        func bail(_ message: String, stopReason: String) {
-            messages = snapshot
+        func fail(_ message: String, _ stopReason: String) -> Outcome {
             onEvent(.failed(message: message))
-            onEvent(.turnCompleted(turnID: turnID, usage: usage, stopReason: stopReason))
+            outcome.stopReason = stopReason
+            outcome.failed = true
+            return outcome
         }
 
         while true {
@@ -89,33 +112,44 @@ final class AIChatSession {
             do {
                 turn = try await streamTurn(onEvent: onEvent)
             } catch {
-                bail(Self.describe(error), stopReason: "error")
-                return
+                return fail(Self.describe(error), "error")
             }
 
-            requests += 1
+            sequence += 1
             AIUsageLog.recordRequest(
-                turnID: turnID, sequence: requests, usage: turn.usage,
+                turnID: turnID, sequence: sequence, usage: turn.usage,
                 latencyMs: Int(Date().timeIntervalSince(requestStart) * 1000))
 
-            usage.inputTokens += turn.usage.inputTokens
-            usage.outputTokens += turn.usage.outputTokens
-            usage.cacheReadTokens += turn.usage.cacheReadTokens
-            usage.cacheCreationTokens += turn.usage.cacheCreationTokens
+            outcome.usage.inputTokens += turn.usage.inputTokens
+            outcome.usage.outputTokens += turn.usage.outputTokens
+            outcome.usage.cacheReadTokens += turn.usage.cacheReadTokens
+            outcome.usage.cacheCreationTokens += turn.usage.cacheCreationTokens
             messages.append(["role": "assistant", "content": turn.content])
 
             switch turn.stopReason {
             case "tool_use":
+                // The terminal tool is the answer, not a step: stop here and
+                // leave it unanswered so nothing follows it.
+                if let terminal = config.terminalTool,
+                   let call = turn.toolCalls.first(where: { $0.name == terminal }) {
+                    outcome.terminal = TerminalCall(id: call.id, input: call.input)
+                    // Anything called alongside it goes unanswered too, so the
+                    // caller knows the full set a continuation has to answer.
+                    outcome.unansweredToolIDs = turn.toolCalls.map(\.id)
+                    outcome.stopReason = turn.stopReason
+                    return outcome
+                }
+
                 rounds += 1
-                if rounds > Self.maxToolRounds {
-                    bail("Stopped after \(Self.maxToolRounds) rounds of tool calls without an answer.", stopReason: "tool_limit")
-                    return
+                if rounds > config.maxToolRounds {
+                    return fail("Stopped after \(config.maxToolRounds) rounds of tool calls without an answer.", "tool_limit")
                 }
                 var results: [[String: Any]] = []
                 for call in turn.toolCalls {
                     onEvent(.toolStarted(name: call.name, summary: Self.summary(name: call.name, input: call.input)))
                     var output = await toolbox.execute(name: call.name, input: call.input)
                     onEvent(.toolFinished(name: call.name))
+                    outcome.toolCallCount += 1
                     // Oversized results stay in the conversation for every later
                     // round, so cap them — the model can always re-query narrower.
                     if output.count > 30_000 {
@@ -129,17 +163,15 @@ final class AIChatSession {
                 messages.append(["role": "user", "content": results])
 
             case "max_tokens":
-                bail("The answer was cut off — it hit the length limit. Ask for a narrower slice and it'll fit.", stopReason: "max_tokens")
-                return
+                return fail("The answer was cut off — it hit the length limit. Ask for a narrower slice and it'll fit.", "max_tokens")
 
             case "refusal":
                 let why = turn.refusalExplanation.map { " (\($0))" } ?? ""
-                bail("Claude couldn't answer that one\(why). Try rephrasing it.", stopReason: "refusal")
-                return
+                return fail("Claude couldn't answer that one\(why). Try rephrasing it.", "refusal")
 
             default:
-                onEvent(.turnCompleted(turnID: turnID, usage: usage, stopReason: turn.stopReason))
-                return
+                outcome.stopReason = turn.stopReason
+                return outcome
             }
         }
     }
@@ -180,16 +212,16 @@ final class AIChatSession {
 
         var body: [String: Any] = [
             "model": Self.model,
-            "max_tokens": Self.maxTokens,
+            "max_tokens": config.maxTokens,
             "stream": true,
             "system": [[
                 "type": "text",
-                "text": AIPrompt.systemPrompt,
+                "text": config.systemPrompt,
                 "cache_control": ["type": "ephemeral"],
             ]],
             "messages": requestMessages,
         ]
-        let tools = toolbox.toolDefinitions
+        let tools = toolbox.toolDefinitions + config.extraTools
         if !tools.isEmpty { body["tools"] = tools }
 
         var request = URLRequest(url: Self.endpoint)
@@ -340,12 +372,6 @@ final class AIChatSession {
         }
     }
 
-    private static func today() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: .now)
-    }
-
     /// Human-readable one-liner for the tool-activity row.
     private static func summary(name: String, input: [String: Any]) -> String {
         func arg(_ key: String) -> String? {
@@ -373,6 +399,66 @@ final class AIChatSession {
             let first = input.values.compactMap { $0 as? String }.first
             return first.map { "\(action): \($0)" } ?? action
         }
+    }
+}
+
+/// One in-memory conversation with the Anthropic Messages API: the chat's
+/// wrapper around `AIToolLoop`, holding the history between questions.
+@MainActor
+final class AIChatSession {
+    private static let maxTokens = 16_000
+
+    private let loop: AIToolLoop
+
+    private(set) var isRunning = false
+
+    init(apiKey: String, toolbox: AIToolbox) {
+        loop = AIToolLoop(apiKey: apiKey, toolbox: toolbox,
+                          config: .init(systemPrompt: AIPrompt.systemPrompt, maxTokens: Self.maxTokens))
+    }
+
+    func reset() {
+        loop.messages.removeAll()
+    }
+
+    /// The raw API history, for persistence — JSON-serializable by construction.
+    var history: [[String: Any]] { loop.messages }
+
+    /// Swaps in a previously saved history so a reopened chat keeps its context.
+    func restore(history: [[String: Any]]) {
+        guard !isRunning else { return }
+        loop.messages = history
+    }
+
+    /// Asks one question and runs the whole tool loop, emitting events as they
+    /// stream. Never throws: every failure arrives as `.failed`. On failure the
+    /// history is rolled back to before the question, so a retry starts clean.
+    func ask(_ text: String, onEvent: @escaping (AIStreamEvent) -> Void) async {
+        guard !isRunning else { return }
+        isRunning = true
+        defer { isRunning = false }
+
+        let snapshot = loop.messages
+        loop.messages.append([
+            "role": "user",
+            "content": [["type": "text", "text": "(Today is \(Self.today()).) " + text]],
+        ])
+
+        let turnID = UUID()
+        let outcome = await loop.run(turnID: turnID, onEvent: onEvent)
+
+        // Any exit that isn't a finished answer leaves the history unusable — an
+        // assistant turn holding tool_use blocks with no tool_result after it, or
+        // a block the stream cut in half — and the API rejects every later turn.
+        // Roll back to before the question instead.
+        if outcome.failed { loop.messages = snapshot }
+        onEvent(.turnCompleted(turnID: turnID, usage: outcome.usage, stopReason: outcome.stopReason))
+    }
+
+    private static func today() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: .now)
     }
 }
 

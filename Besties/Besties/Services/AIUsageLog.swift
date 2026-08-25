@@ -37,10 +37,16 @@ enum AIUsageLog {
 
     /// The turn summary. `latencyMs` is measured around the whole `ask()`, tool
     /// rounds included, and the token counts are the sum of its requests.
-    static func record(turnID: UUID, usage: AIUsage, stopReason: String, latencyMs: Int, toolCallCount: Int) {
-        write([
+    /// `source` separates the two kinds of turn — a chat question ("chat") and a
+    /// packaged report ("report", with `reportKind`) — because a 64k-token report
+    /// would otherwise skew the per-question chat averages this file exists to
+    /// measure.
+    static func record(turnID: UUID, source: String, reportKind: String? = nil,
+                       usage: AIUsage, stopReason: String, latencyMs: Int, toolCallCount: Int) {
+        var fields: [String: Any] = [
             "kind": "turn",
             "turnID": turnID.uuidString,
+            "source": source,
             "inputTokens": usage.inputTokens,
             "outputTokens": usage.outputTokens,
             "cacheReadTokens": usage.cacheReadTokens,
@@ -48,7 +54,9 @@ enum AIUsageLog {
             "latencyMs": latencyMs,
             "toolCallCount": toolCallCount,
             "stopReason": stopReason,
-        ])
+        ]
+        if let reportKind { fields["reportKind"] = reportKind }
+        write(fields)
     }
 
     private static func write(_ fields: [String: Any]) {

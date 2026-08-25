@@ -165,24 +165,136 @@ build failed; Phase 2 must convert ≥ half of the misses.
 
 ## Phase 3 — Packaged moments
 
-The subscription pitch in shareable form. All three are prompt templates over
-the Phase 1/2 plumbing (same tool loop, `max_tokens` 64000), returning
-structured JSON sections rendered as native SwiftUI cards — not raw prose.
+The subscription pitch in shareable form: three one-shot agent runs over the
+Phase 1/2 toolbox (`max_tokens` 64000, `maxToolRounds` 40 against the chat's
+25), each with its own system prompt, returning structured sections rendered as
+native SwiftUI cards — not raw prose. Built as `Services/AIReports.swift` +
+`Views/AIReportView.swift`. What shipped, and where it deviates from the sketch:
 
-1. **Wrapped(year | all-time)** — totals, top people with arcs, busiest day
-   with what happened, phrase-of-the-year, one "you in a sentence". Rendered
-   as cards; screenshot mode already masks names for sharing.
-2. **Friendship Biography(person)** — how it started (real first messages via
-   `read_transcript`), the arc by era, busiest stretch, inside phrases
-   (SQL n-gram counts scoped to the pair), longest silence + who broke it.
-3. **Reconnect draft(person)** — reads the last real exchange + a style
-   sample of the user's own messages to that person; drafts 2 openers in the
-   user's voice referencing what they last talked about. Buttons: copy /
-   open in Messages (reuse the existing `imessage://` plumbing on
-   `LeaderboardRow`).
+1. **Besties Wrapped(year | all-time)** 🎁 — totals, top five people as arcs
+   rather than counts, busiest day read back with `read_transcript`,
+   phrase-of-the-year counted in searchdb and backed by real quotes, one "you in
+   a sentence".
+2. **Friendship Wrapped(person)** 💛 — how it started (the real first exchange),
+   the arc in two to four eras from `person_summary`'s monthly counts, busiest
+   stretch, inside phrases (scoped to the pair's source/chat_id, then checked
+   for rarity outside it), longest silence + who broke it, where it stands now.
+   Named "Friendship Biography" in the first cut; the enum case is still
+   `AIReportKind.biography` and the usage log still says `biography`, because
+   `ai-chats` and every line already written to `ai-usage.jsonl` key off those
+   names. The rename is user-facing only.
+3. **Reconnect draft(person)** — the last real exchange plus a sample of the
+   user's own messages *to that person* for register (length, openers,
+   punctuation, emoji or none); two or three ready-to-send openers, each on a
+   different angle. Buttons: copy / open in Messages — `openInMessages` was
+   hoisted to a top-level func in `ContentView.swift` so the drafts reuse the
+   leaderboard's `imessage://` plumbing. `imessage://` can't carry a body, so
+   "Open in Messages" copies the draft first.
+
+Deviations from the sketch, all in how the structure is obtained and shown:
+
+- **The report is a tool call, not parsed JSON.** Each run's prompt ends with
+  "call `render_report`", a tool whose `input_schema` mirrors `AIReport` field
+  for field. `AIToolLoop` gained a `terminalTool` config: a tool_use with that
+  name ends the run — its input is handed back, no tool_result goes out, nothing
+  follows it. So the model's last word is structured by construction instead of
+  prose that has to be scraped. A plain-text ending, or a `render_report` call
+  that doesn't decode, buys exactly **one** nudge (opening with an `is_error`
+  tool_result for the unanswered tool_use, or the API rejects the turn), then
+  the run fails with `stopReason` `no_report`. Any interim `textDelta` is
+  progress narration and shows as a dim line under the spinner.
+- **The client is now shared.** `AIClient.swift` holds `AIToolLoop` (streaming
+  + tool loop + per-request usage logging); `AIChatSession` is a thin wrapper
+  over it with its own 16k ceiling, 25-round guard and rollback-on-failure, and
+  the chat's behaviour is byte-for-byte unchanged. `AIPrompt` split into
+  `identity` / `databaseCheatsheet` / `careRules` so the reports reuse them
+  verbatim without disturbing the chat's cached system prefix. The system prompt
+  is **per kind only** — the year and the person ride on the user turn — so the
+  cache prefix is reused across people and years.
+- **Nine section kinds, not free-form**: `stat` (consecutive stats auto-group
+  into one adaptive grid), `story` (markdown prose), `quotes` (real messages in
+  real bubbles — "Me" renders blue and right-aligned), `list`, `drafts`, plus
+  the four added by the v2 design below. `MarkdownBody` moved out of
+  `AIChatView.swift` into `Views/MarkdownBody.swift` so the chat and the story
+  cards render markdown identically. The `kind` string is the whole contract
+  between engine and view: an unknown kind falls through to `storyCard` rather
+  than failing, and the lenient decode drops a malformed section on its own
+  instead of throwing away a report that cost two minutes and 64k tokens.
+- **Entry points**: the AI tab's empty state carries three moment cards →
+  a picker (a year, or a person from the resolved conversations) → the report
+  sheet; and every Reconnect row gets a ✨ button that sets
+  `AppState.aiReportRequest` and switches to the AI tab, which consumes it.
+  Screenshot mode already masks names, so the cards are the share surface —
+  no export path.
+- The turn line in `ai-usage.jsonl` is written by `AIReportEngine` (latency
+  measured around the whole run, tool time included); the view only displays
+  the usage it gets on `.turnCompleted`.
+
+### v2 design — both reports are "Wrapped"
+
+The first cut rendered as an editorial document: white cards, left-aligned
+headings, prose. It read like a well-formatted essay, which is not a thing
+anyone screenshots. The v2 design, approved on canvas, makes both yearly and
+per-person reports poster-shaped and gives the model four new ways to say
+something that isn't a paragraph.
+
+- **Poster mode covers both wrapped kinds.** `isWrapped` became `isPoster`
+  (`.wrapped` + `.biography`): centered 34pt heavy hero title, and every stat
+  becomes a big colored tile from a six-tint rotation instead of a small white
+  card. A separate `usesMedals` stays `.wrapped`-only, so the top-five
+  leaderboard keeps its 🥇🥈🥉 while Friendship Wrapped's lists — eras, inside
+  jokes — render as the plain bulleted `listCard`, which is what they are.
+  Consequence for the briefs: the biography brief needed the same "a stat's
+  value must be SHORT, the sentence goes in the label" rule Wrapped already
+  carried, since its values now render at 40–54pt.
+- **`emoji`** — the report's one ink-black tile (`#211E1A` on paper text).
+  `heading` is an uppercase eyebrow, `items` are up to five `"<emoji> <count>"`
+  lines. The view splits each on its *first* space and prints the count string
+  verbatim in 11pt monospace, so `"😂 1,204"` keeps its separator rather than
+  being parsed as an Int. Emoji live in `msgs.text` but FTS doesn't tokenise
+  them, so the brief tells the model to count them with `text LIKE '%😂%'` in
+  one `UNION ALL` — and to pick the candidates from real messages it has read,
+  not from a generic emoji list.
+- **`badge`** — a warm band (bubbleTan 0.55): one 46pt emoji left, a bold
+  rounded title line and a caption right. The texting-personality card (Night
+  Owl, Streak Keeper, Double Texter), named from a number the run already
+  found and with that number in the caption.
+- **`chart`** — a white card of bars, `items` as `"<label> <count>"`, one per
+  bar in order. Heights normalize to the peak at 64pt; bars ≥55% of max take
+  the sun, the rest bubbleTan; the first, last and two interior labels print
+  under the axis, so 8–20 bars reads best. This is what "your eras" should
+  always have been — the shape of a friendship over years is a picture, not a
+  list of counts. The view splits on the *last* space (so labels may contain
+  spaces) and filters the count to digits, so both `2017 1204` and
+  `Summer 2017 1,204` work.
+- **`photo`** — a real image out of the user's own archive, framed as a
+  polaroid: white border, soft shadow, ±1.6° tilt alternating per photo,
+  caption underneath. `value` is an absolute POSIX path copied verbatim from
+  `attachment.filename`; the view expands `~`, standardizes away `..`, and
+  requires the result to sit under `~/Library/Messages/Attachments/` or the
+  WhatsApp group-container media dir before it will load it. Anything else — a
+  path the model invented, a file that moved — drops the whole section
+  silently. This is the only section that can vanish, so nothing else in a
+  report is allowed to depend on it.
+
+**The photo section will usually not appear, and that is a data fact, not a
+bug.** Attachment rows vastly outlive their files: of 40,280 image attachments
+in this Mac's chat.db, **926 (2.3%) still have a file on disk**, concentrated
+almost entirely in the last few months (the most recent 200 rows: 82% present).
+So Friendship Wrapped's "the first image you two ever exchanged" resolves to a
+missing file in nearly every thread, and Besties Wrapped's busiest-day photo
+only lands for a recent year. The contract was built exactly as designed and
+the drop is graceful, but if the polaroid should actually show up, the cheap
+fix is to let `photo` carry `items` as additional candidate paths in preference
+order and have the view render the first one that loads — purely additive, a
+view that ignores `items` behaves exactly as today. Not done, because it
+changes an approved design.
 
 Verify: generate all three for 5 real relationships; grade tone against the
-care rules (nothing gossipy, nothing that scores the other person).
+care rules (nothing gossipy, nothing that scores the other person). For the v2
+kinds specifically: the emoji counts must match a hand-run `LIKE` query, the
+chart's bars must match `person_summary`'s monthly counts rolled up by year,
+and any polaroid that renders must be a picture actually in that thread.
 
 ## Eval + decision gates
 
