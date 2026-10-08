@@ -19,7 +19,7 @@ enum Tab: String, CaseIterable {
         switch self {
         case .allTime: "trophy.fill"
         case .timeMachine: "clock.arrow.circlepath"
-        case .reconnect: "bubble.left.and.bubble.right.fill"
+        case .reconnect: "bubble.left.and.bubble.right"
         case .search: "magnifyingglass"
         case .ai: "sparkles"
         }
@@ -69,10 +69,12 @@ struct TabBar: View {
                     VStack(spacing: 1) {
                         HStack(spacing: 6) {
                             Image(systemName: tab.systemImage)
-                                .font(.system(size: 15, weight: .bold))
+                                // trophy.fill's glyph box runs taller/wider than its
+                                // neighbors, so it gets knocked down to match optically
+                                .font(.system(size: tab == .allTime ? 13.2 : 15, weight: .bold))
                             if labels {
                                 Text(tab.rawValue)
-                                    .font(.system(size: 15, weight: .bold))
+                                    .font(.system(size: 14, weight: .bold))
                                     .lineLimit(1)
                                     .fixedSize()
                             }
