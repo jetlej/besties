@@ -332,3 +332,24 @@ workflow run on the `ai-prototype` branch:
 Pricing/tiers, the Vercel proxy, Stripe, credits, site copy, Keychain,
 multi-model routing, group chats (excluded app-wide), attachments/OCR, and
 any release — release.sh, the DMG, and appcast are untouched by this branch.
+
+## Monetization gate (decided 2026-10-04)
+
+The app stays fully featured and ungated — no history limits, no people
+caps. **AI is the product**: one chat question free (over the full history,
+so the taste demonstrates the whole power), then the paywall. The Wrapped
+moments (Besties Wrapped, Friendship Wrapped, Reconnect drafts) are paid
+from the start — a chat answer is the taste, the moments are the payoff.
+
+Prototype simulation: `defaults write com.besties.app freeTier -bool true`
++ relaunch. One successful chat answer (stop reason end_turn — failures
+don't count) spends the taste; after that the composer becomes the unlock
+bar, preset pills route to the paywall sheet, and the moment cards show 🔒
+and open the paywall. Reset the taste with
+`defaults delete com.besties.app aiFreePromptsUsed`.
+
+Ship requirement: the counter must be enforced **server-side** in the
+proxy (free device/license = 1 credit) — the local counter is a
+`defaults delete` away from unlimited free usage on our API key. The
+paywall buttons currently stub to besties.gg; real checkout wiring is part
+of the proxy/Stripe build, not this prototype.

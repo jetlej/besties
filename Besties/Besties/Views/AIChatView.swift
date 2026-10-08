@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Prototype gate. Both values are read once at launch, mirroring
@@ -7,6 +8,22 @@ import SwiftUI
 enum AIPrototype {
     static let isEnabled = UserDefaults.standard.bool(forKey: "aiPrototype")
     static let apiKey = UserDefaults.standard.string(forKey: "anthropicKey") ?? ""
+
+    /// Free-tier simulation: the app itself is fully free — AI is the paid
+    /// product. One chat question free (full history, so the taste shows the
+    /// whole power), then the paywall; the Wrapped moments are paid from the
+    /// start. `defaults write com.besties.app freeTier -bool true` + relaunch;
+    /// reset the taste with `defaults delete com.besties.app aiFreePromptsUsed`.
+    /// Prototype-only enforcement — the shipped version meters server-side.
+    static let isFreeTier = UserDefaults.standard.bool(forKey: "freeTier")
+    static let freePromptLimit = 1
+
+    static var freePromptsUsed: Int {
+        get { UserDefaults.standard.integer(forKey: "aiFreePromptsUsed") }
+        set { UserDefaults.standard.set(newValue, forKey: "aiFreePromptsUsed") }
+    }
+
+    static var isPaywalled: Bool { isFreeTier && freePromptsUsed >= freePromptLimit }
 }
 
 /// One rendered line of the transcript. Footers live in the same list as the
@@ -52,6 +69,9 @@ private final class AIChatModel {
     private(set) var items: [ChatItem] = []
     /// The session's own `isRunning` isn't observable, so the view watches this.
     private(set) var isRunning = false
+    /// Mirrors `AIPrototype.isPaywalled` observably: flips after the free
+    /// question completes.
+    private(set) var paywalled = AIPrototype.isPaywalled
     private(set) var lastQuestion: String?
     /// Saved conversations, newest first. `currentID == nil` means an unsaved
     /// fresh chat — it gets an id (and a title) on its first completed turn.
@@ -140,7 +160,7 @@ private final class AIChatModel {
     }
 
     private func ask(_ question: String, echo: Bool) {
-        guard !isRunning else { return }
+        guard !isRunning, !paywalled else { return }
         if echo { items.append(ChatItem(role: .user, text: question)) }
         lastQuestion = question
         isRunning = true
@@ -176,6 +196,12 @@ private final class AIChatModel {
             AIUsageLog.record(turnID: turnID, source: "chat", usage: usage, stopReason: stopReason,
                               latencyMs: latency, toolCallCount: turnToolCalls)
             persist()
+            // Only a successfully answered question spends the free taste —
+            // failures and truncations don't count against it.
+            if AIPrototype.isFreeTier, stopReason == "end_turn" {
+                AIPrototype.freePromptsUsed += 1
+                paywalled = AIPrototype.isPaywalled
+            }
 
         case .failed(let message):
             items.append(ChatItem(role: .error, text: message))
@@ -197,6 +223,7 @@ struct AIChatView: View {
     @State private var momentPicker: AIMomentPicker.Moment?
     @State private var pendingKind: AIReportKind?
     @State private var reportRequest: ReportRequest?
+    @State private var showPaywall = false
 
     init(appState: AppState) {
         self.appState = appState
@@ -234,6 +261,7 @@ struct AIChatView: View {
             AIReportView(appState: appState, kind: request.kind)
                 .frame(minWidth: 520, idealWidth: 620, minHeight: 520, idealHeight: 720)
         }
+        .sheet(isPresented: $showPaywall) { paywallSheet }
     }
 
     private func consumeReportRequest() {
@@ -243,7 +271,70 @@ struct AIChatView: View {
         // this tab is already showing the setup hint — so drop the request
         // (cleared above, so it doesn't fire again) and leave the hint up.
         guard !AIPrototype.apiKey.isEmpty else { return }
+        guard !AIPrototype.isFreeTier else {
+            showPaywall = true
+            return
+        }
         reportRequest = ReportRequest(kind: kind)
+    }
+
+    // MARK: - Paywall (free tier)
+
+    /// Replaces the composer once the free question is spent.
+    private var paywallBar: some View {
+        VStack(spacing: 6) {
+            Button {
+                NSWorkspace.shared.open(URL(string: "https://besties.gg")!)
+            } label: {
+                Text("✨  Unlock unlimited AI")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.ink)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(Color.sun, in: RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            Text("Your free question is used. Besties AI is unlimited questions, Besties Wrapped, and Friendship Wrapped.")
+                .font(.caption2)
+                .foregroundStyle(Color.ink.opacity(0.5))
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    /// Shown when a free-tier user taps anything report-shaped.
+    private var paywallSheet: some View {
+        VStack(spacing: 14) {
+            Text("✨")
+                .font(.system(size: 40))
+            Text("That one's part of Besties AI")
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.ink)
+            Text("Unlimited questions about your messages, plus Besties Wrapped, Friendship Wrapped, and Reconnect drafts.")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.ink.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                NSWorkspace.shared.open(URL(string: "https://besties.gg")!)
+            } label: {
+                Text("Unlock Besties AI")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.ink)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(Color.sun, in: RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            Button("Not now") { showPaywall = false }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(Color.ink.opacity(0.5))
+        }
+        .padding(24)
+        .frame(width: 340)
+        .background(Color.paper)
     }
 
     // MARK: - Chat
@@ -264,7 +355,11 @@ struct AIChatView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 Divider()
-                composer
+                if model.paywalled {
+                    paywallBar
+                } else {
+                    composer
+                }
             }
         }
     }
@@ -455,8 +550,12 @@ struct AIChatView: View {
                 FlowLayout(spacing: 8) {
                     ForEach(Self.suggestions, id: \.prompt) { suggestion in
                         Button {
-                            model.draft = suggestion.prompt
-                            model.send()
+                            if model.paywalled {
+                                showPaywall = true
+                            } else {
+                                model.draft = suggestion.prompt
+                                model.send()
+                            }
                         } label: {
                             Text("\(suggestion.emoji) \(suggestion.prompt)")
                                 .font(.callout.weight(.medium))
@@ -496,10 +595,16 @@ struct AIChatView: View {
             HStack(alignment: .top, spacing: 10) {
                 ForEach(Self.momentCards, id: \.moment) { card in
                     Button {
-                        momentPicker = card.moment
+                        // The moments are paid from the start in the free tier
+                        // — the one free taste is a chat question.
+                        if AIPrototype.isFreeTier {
+                            showPaywall = true
+                        } else {
+                            momentPicker = card.moment
+                        }
                     } label: {
                         VStack(spacing: 4) {
-                            Text(card.emoji)
+                            Text(AIPrototype.isFreeTier ? "🔒" : card.emoji)
                                 .font(.system(size: 24))
                             Text(card.title)
                                 .font(.callout.weight(.semibold))
