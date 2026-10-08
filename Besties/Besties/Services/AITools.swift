@@ -286,7 +286,8 @@ final class AIToolbox {
         }
 
         // Owned by AppState, which also drives its sync — one index (and one
-        // resident matrix) for the whole app, and none at all with the flag off.
+        // resident matrix) for the whole app, and none at all unless AI was
+        // unlocked at launch.
         guard let vectors = appState.aiVectorIndex else {
             return ToolJSON.error("semantic search is unavailable")
         }

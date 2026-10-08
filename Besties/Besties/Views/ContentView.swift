@@ -8,13 +8,6 @@ enum Tab: String, CaseIterable {
     case search = "Search"
     case ai = "AI"
 
-    /// The AI prototype tab exists only behind its defaults flag, so the tab
-    /// bar and the ⌘-number menu both drop it when the flag is off.
-    static var allCases: [Tab] {
-        let base: [Tab] = [.allTime, .timeMachine, .reconnect, .search]
-        return AIPrototype.isEnabled ? base + [.ai] : base
-    }
-
     var systemImage: String {
         switch self {
         case .allTime: "trophy.fill"
@@ -162,9 +155,9 @@ struct ContentView: View {
 
     private static let searchFieldWidth: CGFloat = 220
 
-    /// The ✨ column: the prototype flag alone isn't enough, since a run without
-    /// an API key can only ever land on the setup hint.
-    private static let showsAIActions = AIPrototype.isEnabled && !AIPrototype.apiKey.isEmpty
+    /// The ✨ column: only with an active AI key — without one the AI tab is
+    /// the paywall, and a draft request would just be dropped there.
+    private var showsAIActions: Bool { SubscriptionManager.shared.isActive }
 
     /// The people filter, right-aligned directly above whichever list it filters.
     private var filterRow: some View {
@@ -533,7 +526,7 @@ struct ContentView: View {
 
             TableColumn("") { convo in
                 HStack(spacing: 4) {
-                    if Self.showsAIActions {
+                    if showsAIActions {
                         Button {
                             appState.aiReportRequest = .reconnectDraft(person: convo.mergeKey)
                             appState.requestedTab = .ai
@@ -553,7 +546,7 @@ struct ContentView: View {
                     .controlSize(.small)
                 }
             }
-            .width(Self.showsAIActions ? 64 : 30)
+            .width(showsAIActions ? 64 : 30)
         }
         .scrollContentBackground(.hidden)
         .alternatingRowBackgrounds(.disabled)

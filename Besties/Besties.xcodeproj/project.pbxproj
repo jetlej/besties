@@ -34,6 +34,8 @@
 		A10000010000000000000025 /* AIChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000025 /* AIChatView.swift */; };
 		A10000010000000000000029 /* AIReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000029 /* AIReportView.swift */; };
 		A10000010000000000000030 /* MarkdownBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000030 /* MarkdownBody.swift */; };
+		A10000010000000000000031 /* SubscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000031 /* SubscriptionManager.swift */; };
+		A10000010000000000000032 /* SubscriptionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000032 /* SubscriptionViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -65,6 +67,8 @@
 		A20000010000000000000025 /* AIChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatView.swift; sourceTree = "<group>"; };
 		A20000010000000000000029 /* AIReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIReportView.swift; sourceTree = "<group>"; };
 		A20000010000000000000030 /* MarkdownBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBody.swift; sourceTree = "<group>"; };
+		A20000010000000000000031 /* SubscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManager.swift; sourceTree = "<group>"; };
+		A20000010000000000000032 /* SubscriptionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionViews.swift; sourceTree = "<group>"; };
 		A30000010000000000000001 /* Besties.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Besties.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -129,6 +133,7 @@
 				A20000010000000000000026 /* AIChatStore.swift */,
 				A20000010000000000000027 /* AIVectorIndex.swift */,
 				A20000010000000000000028 /* AIReports.swift */,
+				A20000010000000000000031 /* SubscriptionManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -144,6 +149,7 @@
 				A20000010000000000000025 /* AIChatView.swift */,
 				A20000010000000000000029 /* AIReportView.swift */,
 				A20000010000000000000030 /* MarkdownBody.swift */,
+				A20000010000000000000032 /* SubscriptionViews.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -258,6 +264,8 @@
 				A10000010000000000000025 /* AIChatView.swift in Sources */,
 				A10000010000000000000029 /* AIReportView.swift in Sources */,
 				A10000010000000000000030 /* MarkdownBody.swift in Sources */,
+				A10000010000000000000031 /* SubscriptionManager.swift in Sources */,
+				A10000010000000000000032 /* SubscriptionViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

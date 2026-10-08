@@ -62,12 +62,18 @@ final class AIToolLoop {
         var failed = false
     }
 
-    private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
-    private static let model = "claude-opus-5"
-
     private let apiKey: String
+    private let backend: AIBackend
     private let toolbox: AIToolbox
     private let config: Config
+
+    /// OpenRouter's sticky-routing key: pins every request from this loop to
+    /// the provider (Anthropic / Bedrock / Vertex / …) that holds its prompt
+    /// cache, from the first request on. Without it OpenRouter only sticks
+    /// after it has already seen a cache hit, so round two can land on another
+    /// provider and pay to write the whole prefix again. Random, so it carries
+    /// nothing about the user.
+    private let sessionID = UUID().uuidString
 
     /// The raw API history — JSON-serializable by construction. The caller
     /// appends the user turn before `run` and decides what to keep after it.
@@ -83,6 +89,7 @@ final class AIToolLoop {
 
     init(apiKey: String, toolbox: AIToolbox, config: Config) {
         self.apiKey = apiKey
+        self.backend = AIBackend(apiKey: apiKey)
         self.toolbox = toolbox
         self.config = config
     }
@@ -112,7 +119,7 @@ final class AIToolLoop {
             do {
                 turn = try await streamTurn(onEvent: onEvent)
             } catch {
-                return fail(Self.describe(error), "error")
+                return fail(Self.describe(error), (error as? AIClientError)?.stopReason ?? "error")
             }
 
             sequence += 1
@@ -166,8 +173,7 @@ final class AIToolLoop {
                 return fail("The answer was cut off — it hit the length limit. Ask for a narrower slice and it'll fit.", "max_tokens")
 
             case "refusal":
-                let why = turn.refusalExplanation.map { " (\($0))" } ?? ""
-                return fail("Claude couldn't answer that one\(why). Try rephrasing it.", "refusal")
+                return fail(AIClientError.refusal(turn.refusalExplanation).message, "refusal")
 
             default:
                 outcome.stopReason = turn.stopReason
@@ -211,7 +217,7 @@ final class AIToolLoop {
         }
 
         var body: [String: Any] = [
-            "model": Self.model,
+            "model": backend.model,
             "max_tokens": config.maxTokens,
             "stream": true,
             "system": [[
@@ -224,16 +230,28 @@ final class AIToolLoop {
         let tools = toolbox.toolDefinitions + config.extraTools
         if !tools.isEmpty { body["tools"] = tools }
 
-        var request = URLRequest(url: Self.endpoint)
+        var request = URLRequest(url: backend.endpoint)
         request.httpMethod = "POST"
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        switch backend {
+        case .anthropic:
+            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        case .openRouter:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "authorization")
+            body["session_id"] = sessionID
+        }
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (stream, response) = try await URLSession.shared.bytes(for: request)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            throw AIClientError.http(status: http.statusCode, message: try await Self.errorMessage(from: stream))
+            let error = try await Self.errorBody(from: stream)
+            // OpenRouter reports a provider-side refusal as an HTTP error rather
+            // than as stop_reason "refusal"; treat it the same.
+            if error?["error_type"] as? String == "refusal" {
+                throw AIClientError.refusal(error?["message"] as? String)
+            }
+            throw AIClientError.http(status: http.statusCode, message: error?["message"] as? String, backend: backend)
         }
 
         var turn = Turn()
@@ -288,6 +306,9 @@ final class AIToolLoop {
 
             case "error":
                 let error = event["error"] as? [String: Any]
+                if error?["error_type"] as? String == "refusal" {
+                    throw AIClientError.refusal(error?["message"] as? String)
+                }
                 throw AIClientError.api(error?["message"] as? String ?? "The stream failed.")
 
             default:
@@ -337,6 +358,8 @@ final class AIToolLoop {
 
     /// message_start and message_delta both report the running totals for the
     /// same message, so the later report wins rather than adding to the earlier.
+    /// A null field (OpenRouter's message_delta sends `input_tokens: null`)
+    /// fails the `as? Int` and keeps the earlier value.
     private static func absorbUsage(_ usage: [String: Any]?, into turn: inout AIUsage) {
         guard let usage else { return }
         if let input = usage["input_tokens"] as? Int { turn.inputTokens = input }
@@ -345,16 +368,16 @@ final class AIToolLoop {
         if let written = usage["cache_creation_input_tokens"] as? Int { turn.cacheCreationTokens = written }
     }
 
-    /// A failed request's body, for the error message.
-    private static func errorMessage(from stream: URLSession.AsyncBytes) async throws -> String? {
+    /// A failed request's `error` object — `message`, plus OpenRouter's
+    /// canonical `error_type` when it came through OpenRouter.
+    private static func errorBody(from stream: URLSession.AsyncBytes) async throws -> [String: Any]? {
         var data = Data()
         for try await byte in stream {
             data.append(byte)
             if data.count > 8_192 { break }
         }
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let error = json["error"] as? [String: Any] else { return nil }
-        return error["message"] as? String
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json["error"] as? [String: Any]
     }
 
     private static func describe(_ error: Error) -> String {
@@ -462,22 +485,71 @@ final class AIChatSession {
     }
 }
 
+/// Where requests go, picked by key prefix. An OpenRouter key (`sk-or-…`)
+/// goes to OpenRouter's Anthropic-compatible `/messages` endpoint; anything
+/// else (`sk-ant-…`) goes to Anthropic directly. The wire format is the same
+/// Messages API either way — body, cache_control breakpoints, SSE events,
+/// usage fields — so only the URL, auth header and model slug differ.
+private enum AIBackend {
+    case anthropic
+    case openRouter
+
+    init(apiKey: String) {
+        self = apiKey.hasPrefix("sk-or-") ? .openRouter : .anthropic
+    }
+
+    var endpoint: URL {
+        switch self {
+        case .anthropic: return URL(string: "https://api.anthropic.com/v1/messages")!
+        case .openRouter: return URL(string: "https://openrouter.ai/api/v1/messages")!
+        }
+    }
+
+    var model: String {
+        switch self {
+        case .anthropic: return "claude-opus-5"
+        case .openRouter: return "anthropic/claude-opus-5"
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .anthropic: return "Anthropic's API"
+        case .openRouter: return "OpenRouter"
+        }
+    }
+}
+
 private enum AIClientError: Error {
-    case http(status: Int, message: String?)
+    case http(status: Int, message: String?, backend: AIBackend)
     case api(String)
+    case refusal(String?)
 
     var message: String {
         switch self {
-        case .http(let status, let message):
+        case .http(let status, let message, let backend):
             let detail = message.map { ": \($0)" } ?? ""
-            switch status {
-            case 401, 403: return "The API key was rejected\(detail)."
-            case 429: return "Rate limited — wait a moment and try again\(detail)."
-            case 500...599: return "Anthropic's API is having trouble (\(status))\(detail)."
+            switch (status, backend) {
+            case (401, _), (403, .anthropic): return "The API key was rejected\(detail)."
+            // OpenRouter: the key's spend limit (or the account's credit) is used up.
+            case (402, _): return "Out of AI credit\(detail)."
+            // OpenRouter: a guardrail or content filter blocked it — not the key.
+            case (403, .openRouter): return "The request was blocked\(detail)."
+            case (429, _): return "Rate limited — wait a moment and try again\(detail)."
+            case (500...599, _): return "\(backend.name) is having trouble (\(status))\(detail)."
             default: return "The request failed (\(status))\(detail)."
             }
         case .api(let message):
             return message
+        case .refusal(let explanation):
+            let why = explanation.map { " (\($0))" } ?? ""
+            return "Claude couldn't answer that one\(why). Try rephrasing it."
         }
+    }
+
+    /// The `Outcome.stopReason` a thrown error ends the run with.
+    var stopReason: String {
+        if case .refusal = self { return "refusal" }
+        return "error"
     }
 }

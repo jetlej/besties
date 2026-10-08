@@ -864,7 +864,7 @@ struct AIReportView: View {
         usage = AIUsage()
         startedAt = .now
 
-        let engine = AIReportEngine(apiKey: AIPrototype.apiKey, toolbox: AIToolbox(appState: appState))
+        let engine = AIReportEngine(apiKey: SubscriptionManager.shared.activeKey ?? "", toolbox: AIToolbox(appState: appState))
         let finished = await engine.run(kind) { event in
             switch event {
             case .textDelta(let chunk):

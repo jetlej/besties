@@ -335,6 +335,11 @@ any release — release.sh, the DMG, and appcast are untouched by this branch.
 
 ## Monetization gate (decided 2026-10-04)
 
+> **Superseded 2026-10-08:** no free trial. This gate and the defaults flags
+> below were deleted in Phase 3 of `docs/ai-subscription-plan.md`; the AI tab
+> is now always visible and shows a paywall until `SubscriptionManager` has
+> an active key.
+
 The app stays fully featured and ungated — no history limits, no people
 caps. **AI is the product**: one chat question free (over the full history,
 so the taste demonstrates the whole power), then the paywall. The Wrapped

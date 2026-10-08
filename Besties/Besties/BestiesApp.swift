@@ -51,6 +51,7 @@ struct BestiesApp: App {
             .preferredColorScheme(.light)
             .task {
                 appState.checkAccess()
+                Task { await SubscriptionManager.shared.refreshIfDue() }
                 DispatchQueue.main.async {
                     NSApp.windows.first?.title = appName
                     Self.applyDefaultFrameOnce()
@@ -205,9 +206,10 @@ final class AppState {
     // Full-content search: sidecar FTS index, synced in the background on launch.
     let searchIndex = SearchIndex()
     /// Phase-2 semantic index, built from the FTS index once it has synced.
-    /// nil unless the prototype flag is on, so `vec.sqlite` never exists for
-    /// anyone else.
-    let aiVectorIndex: AIVectorIndex? = AIPrototype.isEnabled ? AIVectorIndex() : nil
+    /// nil unless AI was unlocked at launch, so `vec.sqlite` (an hour of
+    /// background embedding) never exists for anyone who doesn't subscribe;
+    /// subscribing mid-session gets it from the next launch.
+    let aiVectorIndex: AIVectorIndex? = SubscriptionManager.hasStoredAccess ? AIVectorIndex() : nil
     var searchProgress: (done: Int, total: Int)?
     var searchIndexedCount = 0
     var chatInfoByID: [Int64: MessageStore.ChatInfo] = [:]
