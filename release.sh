@@ -11,6 +11,12 @@
 #
 # Usage:  ./release.sh <major.minor[.patch]> [keychain-profile]
 #         e.g. ./release.sh 1.1            (default profile: SPEED_NOTARY)
+#
+# CI (.github/workflows/macos-app.yml) runs this same script with:
+#   NOTARY_KEY_PATH / NOTARY_KEY_ID / NOTARY_ISSUER — App Store Connect API key,
+#     used instead of the keychain profile
+#   SKIP_APPCAST=1 — stop after the stapled Besties.zip; the appcast needs the
+#     EdDSA key in this Mac's login Keychain plus the previous releases' zips
 
 set -euo pipefail
 
@@ -41,12 +47,23 @@ APP="build/Build/Products/Release/Besties.app"
 # com.apple.security.get-task-allow, which the notary service rejects.
 ENTITLEMENTS="Besties/Besties.entitlements"
 
+if [ -n "${NOTARY_KEY_PATH:-}" ]; then
+  NOTARY_AUTH=(--key "$NOTARY_KEY_PATH" --key-id "${NOTARY_KEY_ID:?}" --issuer "${NOTARY_ISSUER:?}")
+else
+  NOTARY_AUTH=(--keychain-profile "$PROFILE")
+fi
+
 echo "▶ Building Release $VERSION (build $BUILD)…"
 rm -rf build
-xcodebuild -project Besties.xcodeproj -scheme Besties -configuration Release \
+BUILD_LOG="$(mktemp)"
+if ! xcodebuild -project Besties.xcodeproj -scheme Besties -configuration Release \
   -derivedDataPath build \
   MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
-  clean build >/dev/null
+  clean build >"$BUILD_LOG" 2>&1; then
+  grep -E "error:|BUILD FAILED" "$BUILD_LOG" || tail -50 "$BUILD_LOG"
+  echo "xcodebuild failed — full log: $BUILD_LOG" >&2
+  exit 1
+fi
 
 # Sparkle ships its tools inside the SPM binary artifact the build just fetched,
 # so they always match the Sparkle the app is linked against. Fail here rather
@@ -81,7 +98,7 @@ ditto -c -k --keepParent "$APP" "build/Besties-notarize.zip"
 
 echo "▶ Submitting to Apple notary service (a few minutes)…"
 xcrun notarytool submit "build/Besties-notarize.zip" \
-  --keychain-profile "$PROFILE" --wait
+  "${NOTARY_AUTH[@]}" --wait
 
 echo "▶ Stapling the notarization ticket to the app…"
 xcrun stapler staple "$APP"
@@ -93,6 +110,11 @@ ditto -c -k --keepParent "$APP" "$ROOT/Besties.zip"
 echo "▶ Final verification…"
 xcrun stapler validate "$APP"
 spctl -a -vvv --type execute "$APP"
+
+if [ -n "${SKIP_APPCAST:-}" ]; then
+  echo "✅ Done → $ROOT/Besties.zip  (SKIP_APPCAST set — appcast not regenerated)"
+  exit 0
+fi
 
 echo "▶ Staging the update zip and regenerating the appcast…"
 mkdir -p "$UPDATES"
