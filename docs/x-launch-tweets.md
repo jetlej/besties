@@ -174,3 +174,50 @@ PostHog project "Besties" (533638), tracking from Jul 29, 2026 to today. Localho
 1. **The free + bring-your-own-key / subscription model doesn't exist in the code yet.** Besties has no AI features and no billing; today it's $11 once, or free to build. These drafts describe the app as it is now. When the new model ships, alternate B makes a natural lead-in, and the old "free model" draft can be rewritten in this voice.
 2. **The phone visitor problem shows up in the data:** 15 of 135 visitors were on iOS, and 28 were on Windows, who can't use a Mac app either. The "email me the Mac link" box is still worth adding before tweet 1.
 3. **Suggested order:** 1 (launch) → 5 (privacy, to answer the replies tweet 1 will get) → 2 (Reddit) → 4 (personal) → 3 (numbers, on a Friday).
+
+---
+
+# X bios for @lej_dev
+
+Current profile: display name "lej", bio "building things", location NYC, no link, 5,772 followers.
+
+**Setup for all five:** put `besties.gg` in the **website** field. X shows location next to the link, so a location ending in "→" points at it. Bios are lowercase and raw like the tweets. Lengths use X's count (emoji = 2) against the 160 limit; location is capped at 30.
+
+**A. thesis first**
+```
+anyone can clone an app with ai now. so mine are free, and you only pay for extras that actually help you. making besties.gg
+```
+Location: `nyc → the app`
+
+**B. marc lou-style list**
+```
+💬 besties.gg: a mac app that reads your texts and shows who matters. $[X]/mo
+📉 $160 on reddit ads → 1 sale
+🔜 next app, whenever
+```
+Location: `My apps →`
+
+`$[X]/mo` is subscription revenue. Until there is some, use a real number that already exists, e.g. `135 visitors so far`.
+
+**C. self-deprecating**
+```
+building things. lately a mac app that reads your texts. spent $160 on reddit ads and sold one copy
+```
+Location: `nyc`
+
+**D. building in public**
+```
+building free apps in public, paid for by optional extras. sharing every number, including the $160 of reddit ads that flopped
+```
+Location: `watch it grow →`
+
+**E. short identity line**
+```
+building things, sharing the numbers
+```
+Location: `nyc`
+
+**Notes**
+- **A, D and B's `$/mo` depend on the free + bring-your-own-AI-key / subscription model being live.** As of today `origin/main` still has no AI or billing code, and besties.gg sells the app for $11 once. Until the new version ships, use C or E, or switch D to "apps" instead of "free apps".
+- **"sold one copy" (C) and "1 sale" (B) refer to the Reddit ads specifically** (PostHog: 1 purchase from Reddit). Stripe hasn't confirmed that sale was a paid $11 rather than the `BESTIE` friends code, so check that first. If it was free, use "sold zero copies" / "0 sales".
+- Neither bio claims anything about data staying on the Mac.
