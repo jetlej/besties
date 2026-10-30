@@ -16,7 +16,7 @@ struct AIUsage {
 /// through the same Anthropic-format `/messages` endpoint.
 enum AIModel: String, CaseIterable, Identifiable {
     // Raw values are persisted (defaults + saved chats) — never rename them.
-    case fable, opus, sonnet, haiku
+    case opus, sonnet, haiku
     case gptAstra = "gpt-6-astra", gptSol = "gpt-6.1-sol", gptTerra = "gpt-6.1-terra", gptLuna = "gpt-6-luna"
     case gemini = "gemini-4-argon", grok = "grok-4.7", kimi = "kimi-k3.1-pro", deepseek = "deepseek-v4.1-flash"
 
@@ -37,7 +37,7 @@ enum AIModel: String, CaseIterable, Identifiable {
 
     var family: Family {
         switch self {
-        case .fable, .opus, .sonnet, .haiku: return .claude
+        case .opus, .sonnet, .haiku: return .claude
         case .gptAstra, .gptSol, .gptTerra, .gptLuna: return .openAI
         case .gemini, .grok, .kimi, .deepseek: return .other
         }
@@ -45,7 +45,6 @@ enum AIModel: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .fable: return "Claude Fable 5.1"
         case .opus: return "Claude Opus 5.5"
         case .sonnet: return "Claude Sonnet 5.5"
         case .haiku: return "Claude Haiku 5.5"
@@ -62,7 +61,6 @@ enum AIModel: String, CaseIterable, Identifiable {
 
     var blurb: String {
         switch self {
-        case .fable: return "Most capable, slowest, priciest"
         case .opus: return "Smartest everyday pick"
         case .sonnet: return "Fast and smart, half of Opus's price"
         case .haiku: return "Fastest, a fraction of the cost"
@@ -80,8 +78,6 @@ enum AIModel: String, CaseIterable, Identifiable {
     /// The model id on each backend; nil where it isn't offered.
     fileprivate func apiID(for backend: AIBackend) -> String? {
         switch (self, backend) {
-        case (.fable, .anthropic): return "claude-fable-5-1"
-        case (.fable, .openRouter): return "anthropic/claude-fable-5.1"
         case (_, .anthropic) where family == .claude: return "claude-\(rawValue)-5-5"
         case (_, .openRouter) where family == .claude: return "anthropic/claude-\(rawValue)-5.5"
         case (_, .anthropic): return nil
@@ -105,7 +101,6 @@ enum AIModel: String, CaseIterable, Identifiable {
     /// price). Haiku's are its up-to-100K-token tier.
     var prices: (input: Double, output: Double, cacheRead: Double, cacheWrite: Double) {
         switch self {
-        case .fable: return (10, 50, 0.25, 12.5)
         case .opus: return (4, 20, 0.2, 5)
         case .sonnet: return (2, 10, 0.2, 2.5)
         case .haiku: return (0.1, 0.5, 0.01, 0.125)
