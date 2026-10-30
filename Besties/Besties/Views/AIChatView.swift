@@ -193,6 +193,9 @@ private final class AIChatModel {
             isRunning = true
             turnStartedAt = .now
             turnToolCalls = 0
+            // A non-Claude pick on an Anthropic key (the key can change under
+            // a chat) answers on the default rather than failing.
+            let model = model.isAvailable(withKey: SubscriptionManager.shared.activeKey) ? model : .default
             await session.ask(question, model: model) { [weak self] event in
                 self?.handle(event)
             }
@@ -643,17 +646,31 @@ struct AIChatView: View {
 }
 
 extension AIChatView {
-    /// Which Claude answers the next question. Each answer's footer names the
+    /// Which model answers the next question. Each answer's footer names the
     /// model that wrote it.
     fileprivate var modelMenu: some View {
-        Menu {
-            Picker("Model", selection: $model.model) {
-                ForEach(AIModel.allCases) { option in
-                    Text("\(option.label) — \(option.blurb)").tag(option)
+        let key = subscription.activeKey
+        return Menu {
+            ForEach(AIModel.Family.allCases, id: \.self) { family in
+                Section(family.rawValue) {
+                    ForEach(AIModel.allCases.filter { $0.family == family }) { option in
+                        Button {
+                            model.model = option
+                        } label: {
+                            if option == model.model {
+                                Label("\(option.label) — \(option.blurb)", systemImage: "checkmark")
+                            } else {
+                                Text("\(option.label) — \(option.blurb)")
+                            }
+                        }
+                        .disabled(!option.isAvailable(withKey: key))
+                    }
                 }
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
+            if !AIModel.gptSol.isAvailable(withKey: key) {
+                Divider()
+                Text("GPT and other non-Claude models need Besties AI or an OpenRouter key")
+            }
         } label: {
             HStack(spacing: 3) {
                 Text(model.model.label)
