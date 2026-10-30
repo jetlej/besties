@@ -7,6 +7,57 @@ struct AIUsage {
     var outputTokens: Int = 0
     var cacheReadTokens: Int = 0
     var cacheCreationTokens: Int = 0
+    /// Which model these tokens were spent on, so the cost uses its prices.
+    var model = AIModel.default
+}
+
+/// The Claude models the chat can switch between, per question.
+enum AIModel: String, CaseIterable, Identifiable {
+    case opus, sonnet, haiku
+
+    static let `default` = AIModel.opus
+    private static let defaultsKey = "aiModel"
+
+    /// The chat's pick, remembered across launches.
+    static var selected: AIModel {
+        get { UserDefaults.standard.string(forKey: defaultsKey).flatMap(AIModel.init(rawValue:)) ?? .default }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey) }
+    }
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .opus: return "Opus 5.5"
+        case .sonnet: return "Sonnet 5.5"
+        case .haiku: return "Haiku 5.5"
+        }
+    }
+
+    var blurb: String {
+        switch self {
+        case .opus: return "Smartest, best for tricky questions"
+        case .sonnet: return "Fast and smart, about half the cost"
+        case .haiku: return "Fastest, a fraction of the cost"
+        }
+    }
+
+    fileprivate func apiID(for backend: AIBackend) -> String {
+        switch backend {
+        case .anthropic: return "claude-\(rawValue)-5-5"
+        case .openRouter: return "anthropic/claude-\(rawValue)-5.5"
+        }
+    }
+
+    /// List prices, USD per million tokens: input, output, cache read, cache
+    /// write. Haiku's are its up-to-100K-token tier.
+    var prices: (input: Double, output: Double, cacheRead: Double, cacheWrite: Double) {
+        switch self {
+        case .opus: return (4, 20, 0.2, 5)
+        case .sonnet: return (2, 10, 0.2, 2.5)
+        case .haiku: return (0.1, 0.5, 0.01, 0.125)
+        }
+    }
 }
 
 enum AIStreamEvent {
@@ -80,6 +131,9 @@ final class AIToolLoop {
     /// appends the user turn before `run` and decides what to keep after it.
     var messages: [[String: Any]] = []
 
+    /// Can change between runs: the history carries over to the new model.
+    var model = AIModel.default
+
     /// `AIUsageLog` numbers requests within a turn, and one turn can span more
     /// than one `run` (a report that needs a nudge), so the counters follow the
     /// turn id rather than the call — including the runaway guard, or a nudged
@@ -106,6 +160,7 @@ final class AIToolLoop {
         }
 
         var outcome = Outcome()
+        outcome.usage.model = model
 
         func fail(_ message: String, _ stopReason: String) -> Outcome {
             onEvent(.failed(message: message))
@@ -134,7 +189,7 @@ final class AIToolLoop {
 
             sequence += 1
             AIUsageLog.recordRequest(
-                turnID: turnID, sequence: sequence, usage: turn.usage,
+                turnID: turnID, sequence: sequence, model: model, usage: turn.usage,
                 latencyMs: Int(Date().timeIntervalSince(requestStart) * 1000))
 
             outcome.usage.inputTokens += turn.usage.inputTokens
@@ -227,7 +282,7 @@ final class AIToolLoop {
         }
 
         var body: [String: Any] = [
-            "model": backend.model,
+            "model": model.apiID(for: backend),
             "max_tokens": config.maxTokens,
             "stream": true,
             "system": [[
@@ -471,10 +526,11 @@ final class AIChatSession {
     /// stream. Never throws: every failure arrives as `.failed`. On failure the
     /// history is rolled back to before the question, so a retry starts clean.
     /// Cancelling the calling task stops the answer (`stopReason "stopped"`).
-    func ask(_ text: String, onEvent: @escaping (AIStreamEvent) -> Void) async {
+    func ask(_ text: String, model: AIModel, onEvent: @escaping (AIStreamEvent) -> Void) async {
         guard !isRunning else { return }
         isRunning = true
         defer { isRunning = false }
+        loop.model = model
 
         let snapshot = loop.messages
         let question: [String: Any] = [
@@ -536,13 +592,6 @@ private enum AIBackend {
         switch self {
         case .anthropic: return URL(string: "https://api.anthropic.com/v1/messages")!
         case .openRouter: return URL(string: "https://openrouter.ai/api/v1/messages")!
-        }
-    }
-
-    var model: String {
-        switch self {
-        case .anthropic: return "claude-opus-5"
-        case .openRouter: return "anthropic/claude-opus-5"
         }
     }
 

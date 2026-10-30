@@ -15,7 +15,8 @@ private struct ChatItem: Identifiable {
     var dictionary: [String: Any] {
         ["role": role.rawValue, "text": text, "stop": stopReason,
          "in": usage.inputTokens, "out": usage.outputTokens,
-         "cr": usage.cacheReadTokens, "cw": usage.cacheCreationTokens]
+         "cr": usage.cacheReadTokens, "cw": usage.cacheCreationTokens,
+         "model": usage.model.rawValue]
     }
 
     init(role: Role, text: String = "", usage: AIUsage = AIUsage(), stopReason: String = "") {
@@ -33,7 +34,8 @@ private struct ChatItem: Identifiable {
         usage = AIUsage(inputTokens: dictionary["in"] as? Int ?? 0,
                         outputTokens: dictionary["out"] as? Int ?? 0,
                         cacheReadTokens: dictionary["cr"] as? Int ?? 0,
-                        cacheCreationTokens: dictionary["cw"] as? Int ?? 0)
+                        cacheCreationTokens: dictionary["cw"] as? Int ?? 0,
+                        model: AIModel(rawValue: dictionary["model"] as? String ?? "") ?? .default)
     }
 }
 
@@ -41,6 +43,10 @@ private struct ChatItem: Identifiable {
 @Observable
 private final class AIChatModel {
     var draft = ""
+    /// Applies from the next question on, so one chat can mix models.
+    var model = AIModel.selected {
+        didSet { AIModel.selected = model }
+    }
     private(set) var items: [ChatItem] = []
     /// The session's own `isRunning` isn't observable, so the view watches this.
     private(set) var isRunning = false
@@ -187,7 +193,7 @@ private final class AIChatModel {
             isRunning = true
             turnStartedAt = .now
             turnToolCalls = 0
-            await session.ask(question) { [weak self] event in
+            await session.ask(question, model: model) { [weak self] event in
                 self?.handle(event)
             }
             isRunning = false
@@ -464,7 +470,7 @@ struct AIChatView: View {
         let answer = model.answer(endingAt: item.id)
         return HStack(spacing: 10) {
             if !answer.isEmpty { CopyAnswerButton(text: answer) }
-            Text("\(tokens) · \(cost)\(stop)")
+            Text("\(usage.model.label) · \(tokens) · \(cost)\(stop)")
                 .font(.caption2.monospaced())
                 .foregroundStyle(Color.ink.opacity(0.35))
         }
@@ -598,6 +604,7 @@ struct AIChatView: View {
                             .allowsHitTesting(false)
                     }
                 }
+            modelMenu
             if model.isRunning && draftIsEmpty {
                 Button {
                     model.stop()
@@ -632,6 +639,35 @@ struct AIChatView: View {
             .strokeBorder(inputFocused ? Color.sun : Color.ink.opacity(0.12), lineWidth: 1.5))
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+}
+
+extension AIChatView {
+    /// Which Claude answers the next question. Each answer's footer names the
+    /// model that wrote it.
+    fileprivate var modelMenu: some View {
+        Menu {
+            Picker("Model", selection: $model.model) {
+                ForEach(AIModel.allCases) { option in
+                    Text("\(option.label) — \(option.blurb)").tag(option)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            HStack(spacing: 3) {
+                Text(model.model.label)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(Color.ink.opacity(0.55))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .padding(.bottom, 1)
+        .help("Choose the model for your next question")
     }
 }
 
