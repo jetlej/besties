@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// One rendered line of the transcript. Footers live in the same list as the
 /// bubbles so everything stays in the order it happened.
@@ -14,7 +15,8 @@ private struct ChatItem: Identifiable {
     var dictionary: [String: Any] {
         ["role": role.rawValue, "text": text, "stop": stopReason,
          "in": usage.inputTokens, "out": usage.outputTokens,
-         "cr": usage.cacheReadTokens, "cw": usage.cacheCreationTokens]
+         "cr": usage.cacheReadTokens, "cw": usage.cacheCreationTokens,
+         "model": usage.model.rawValue]
     }
 
     init(role: Role, text: String = "", usage: AIUsage = AIUsage(), stopReason: String = "") {
@@ -32,7 +34,8 @@ private struct ChatItem: Identifiable {
         usage = AIUsage(inputTokens: dictionary["in"] as? Int ?? 0,
                         outputTokens: dictionary["out"] as? Int ?? 0,
                         cacheReadTokens: dictionary["cr"] as? Int ?? 0,
-                        cacheCreationTokens: dictionary["cw"] as? Int ?? 0)
+                        cacheCreationTokens: dictionary["cw"] as? Int ?? 0,
+                        model: AIModel(rawValue: dictionary["model"] as? String ?? "") ?? .default)
     }
 }
 
@@ -40,6 +43,10 @@ private struct ChatItem: Identifiable {
 @Observable
 private final class AIChatModel {
     var draft = ""
+    /// Applies from the next question on, so one chat can mix models.
+    var model = AIModel.selected {
+        didSet { AIModel.selected = model }
+    }
     private(set) var items: [ChatItem] = []
     /// The session's own `isRunning` isn't observable, so the view watches this.
     private(set) var isRunning = false
@@ -54,6 +61,9 @@ private final class AIChatModel {
     private var sessionKey: String
     private(set) var turnStartedAt = Date()
     private var turnToolCalls = 0
+    /// The turn in flight, or the last one. Each new turn waits on it, so a
+    /// steer runs only after the stopped turn has finished unwinding.
+    private var turnTask: Task<Void, Never>?
 
     /// Switching tabs tears the view down, so the conversation lives here
     /// rather than in view state — still memory only, still gone on quit.
@@ -89,11 +99,29 @@ private final class AIChatModel {
         return session
     }
 
+    /// Sending mid-answer steers: the current answer stops (what streamed so
+    /// far stays in the chat and in context) and the new message goes next.
     func send() {
         let question = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
         draft = ""
+        stop()
         ask(question, echo: true)
+    }
+
+    func stop() {
+        guard isRunning else { return }
+        turnTask?.cancel()
+    }
+
+    /// Every assistant line of the turn a footer closes, for its Copy button.
+    func answer(endingAt footerID: UUID) -> String {
+        guard let end = items.firstIndex(where: { $0.id == footerID }) else { return "" }
+        let start = items[..<end].lastIndex(where: { $0.role == .user }).map { $0 + 1 } ?? 0
+        return items[start..<end]
+            .filter { $0.role == .assistant }
+            .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .joined(separator: "\n\n")
     }
 
     /// Re-asks the last question after a failure. The client rolled its own
@@ -151,15 +179,24 @@ private final class AIChatModel {
     }
 
     private func ask(_ question: String, echo: Bool) {
-        guard !isRunning, let session = sessionForCurrentKey() else { return }
-        if echo { items.append(ChatItem(role: .user, text: question)) }
-        lastQuestion = question
+        guard SubscriptionManager.shared.activeKey != nil else { return }
+        let previous = turnTask
         isRunning = true
-        turnStartedAt = .now
-        turnToolCalls = 0
-
-        Task {
-            await session.ask(question) { [weak self] event in
+        turnTask = Task {
+            await previous?.value
+            guard let session = sessionForCurrentKey() else {
+                isRunning = false
+                return
+            }
+            if echo { items.append(ChatItem(role: .user, text: question)) }
+            lastQuestion = question
+            isRunning = true
+            turnStartedAt = .now
+            turnToolCalls = 0
+            // A non-Claude pick on an Anthropic key (the key can change under
+            // a chat) answers on the default rather than failing.
+            let model = model.isAvailable(withKey: SubscriptionManager.shared.activeKey) ? model : .default
+            await session.ask(question, model: model) { [weak self] event in
                 self?.handle(event)
             }
             isRunning = false
@@ -205,7 +242,8 @@ private struct ReportRequest: Identifiable {
 struct AIChatView: View {
     let appState: AppState
     @State private var model: AIChatModel
-    @FocusState private var inputFocused: Bool
+    @State private var inputFocused = false
+    @State private var inputHeight: CGFloat = 17
     @State private var momentPicker: AIMomentPicker.Moment?
     @State private var pendingKind: AIReportKind?
     @State private var reportRequest: ReportRequest?
@@ -432,10 +470,14 @@ struct AIChatView: View {
         let tokens = "\(usage.inputTokens.formatted()) in · \(usage.outputTokens.formatted()) out · \(usage.cacheReadTokens.formatted()) cached · \(usage.cacheCreationTokens.formatted()) written"
         let cost = String(format: "$%.4f", usage.costUSD)
         let stop = item.stopReason == "end_turn" ? "" : " · \(item.stopReason)"
-        return Text("\(tokens) · \(cost)\(stop)")
-            .font(.caption2.monospaced())
-            .foregroundStyle(Color.ink.opacity(0.35))
-            .padding(.leading, 4)
+        let answer = model.answer(endingAt: item.id)
+        return HStack(spacing: 10) {
+            if !answer.isEmpty { CopyAnswerButton(text: answer) }
+            Text("\(usage.model.label) · \(tokens) · \(cost)\(stop)")
+                .font(.caption2.monospaced())
+                .foregroundStyle(Color.ink.opacity(0.35))
+        }
+        .padding(.leading, 4)
     }
 
     private static let suggestions: [(emoji: String, prompt: String, tint: Color)] = [
@@ -545,17 +587,37 @@ struct AIChatView: View {
 
     // MARK: - Composer
 
+    /// Return sends, Shift- or Option-Return adds a line. It stays editable
+    /// while an answer streams: sending then steers, and Stop (or Esc) halts.
     private var composer: some View {
-        HStack(spacing: 8) {
-            TextField("Ask about your messages…", text: $model.draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...5)
-                .focused($inputFocused)
-                .onSubmit { model.send() }
-                .disabled(model.isRunning)
-            if model.isRunning {
-                ProgressView()
-                    .controlSize(.small)
+        let draftIsEmpty = model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return HStack(alignment: .bottom, spacing: 8) {
+            ChatInputField(text: $model.draft, height: $inputHeight, isFocused: $inputFocused,
+                           onSubmit: { model.send() },
+                           onCancel: {
+                               guard model.isRunning else { return false }
+                               model.stop()
+                               return true
+                           })
+                .frame(height: inputHeight)
+                .overlay(alignment: .topLeading) {
+                    if model.draft.isEmpty {
+                        Text(model.isRunning ? "Add to or redirect the answer…" : "Ask about your messages…")
+                            .foregroundStyle(Color.ink.opacity(0.35))
+                            .allowsHitTesting(false)
+                    }
+                }
+            modelMenu
+            if model.isRunning && draftIsEmpty {
+                Button {
+                    model.stop()
+                } label: {
+                    Image(systemName: "stop.circle.fill")
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.ink)
+                .help("Stop (Esc)")
             } else {
                 Button {
                     model.send()
@@ -564,9 +626,9 @@ struct AIChatView: View {
                         .font(.title3)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                 ? Color.ink.opacity(0.25) : Color.brandBlue)
-                .disabled(model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .foregroundStyle(draftIsEmpty ? Color.ink.opacity(0.25) : Color.brandBlue)
+                .disabled(draftIsEmpty)
+                .help(model.isRunning ? "Stop and send this instead" : "Send (Return)")
             }
         }
         .padding(.horizontal, 13)
@@ -580,6 +642,217 @@ struct AIChatView: View {
             .strokeBorder(inputFocused ? Color.sun : Color.ink.opacity(0.12), lineWidth: 1.5))
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .onAppear { inputFocused = true }
+    }
+}
+
+extension AIChatView {
+    /// Which model answers the next question. Each answer's footer names the
+    /// model that wrote it.
+    fileprivate var modelMenu: some View {
+        let key = subscription.activeKey
+        return Menu {
+            ForEach(AIModel.Family.allCases, id: \.self) { family in
+                Section(family.rawValue) {
+                    ForEach(AIModel.allCases.filter { $0.family == family }) { option in
+                        Button {
+                            model.model = option
+                        } label: {
+                            if option == model.model {
+                                Label("\(option.label) — \(option.blurb)", systemImage: "checkmark")
+                            } else {
+                                Text("\(option.label) — \(option.blurb)")
+                            }
+                        }
+                        .disabled(!option.isAvailable(withKey: key))
+                    }
+                }
+            }
+            if !AIModel.gptSol.isAvailable(withKey: key) {
+                Divider()
+                Text("GPT and other non-Claude models need Besties AI or an OpenRouter key")
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(model.model.label)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(Color.ink.opacity(0.55))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .padding(.bottom, 1)
+        .help("Choose the model for your next question")
+    }
+}
+
+/// Copies one whole answer, markdown and all, like a regular AI chat.
+private struct CopyAnswerButton: View {
+    let text: String
+    @State private var copied = false
+
+    var body: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            copied = true
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                copied = false
+            }
+        } label: {
+            Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(Color.ink.opacity(copied ? 0.7 : 0.5))
+        }
+        .buttonStyle(.plain)
+        .help("Copy the whole answer")
+    }
+}
+
+// MARK: - Input field
+
+/// The composer's text view. SwiftUI's TextField can't tell Return from
+/// Shift-Return, so this is an NSTextView that does: Return (or ⌘-Return)
+/// submits, Shift- or Option-Return inserts a line, Esc goes to `onCancel`.
+/// It grows with its text up to `maxLines`, then scrolls.
+private struct ChatInputField: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var height: CGFloat
+    @Binding var isFocused: Bool
+    var maxLines = 5
+    let onSubmit: () -> Void
+    /// Returns whether Esc was used; if not, the text view handles it.
+    let onCancel: () -> Bool
+
+    /// Matches SwiftUI's body text under the app's `.fontDesign(.rounded)`.
+    static let font: NSFont = {
+        let base = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        return base.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: base.pointSize) } ?? base
+    }()
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = InputTextView(usingTextLayoutManager: false)
+        textView.coordinator = context.coordinator
+        textView.delegate = context.coordinator
+        textView.string = text
+        textView.font = Self.font
+        textView.textColor = NSColor(Color.ink)
+        textView.insertionPointColor = NSColor(Color.ink)
+        textView.drawsBackground = false
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.textContainerInset = .zero
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.minSize = .zero
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        // Programmatic changes only — clearing after send, a suggestion chip.
+        if textView.string != text {
+            textView.string = text
+            context.coordinator.measure(textView)
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: ChatInputField
+
+        init(_ parent: ChatInputField) { self.parent = parent }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            parent.text = textView.string
+            measure(textView)
+        }
+
+        func setFocused(_ focused: Bool) {
+            guard parent.isFocused != focused else { return }
+            DispatchQueue.main.async { self.parent.isFocused = focused }
+        }
+
+        /// One line tall when empty, up to `maxLines`, then the view scrolls.
+        func measure(_ textView: NSTextView) {
+            guard let layout = textView.layoutManager, let container = textView.textContainer else { return }
+            layout.ensureLayout(for: container)
+            let line = layout.defaultLineHeight(for: ChatInputField.font)
+            let used = max(layout.usedRect(for: container).height, line)
+            let height = ceil(min(used, line * CGFloat(parent.maxLines)))
+            guard abs(parent.height - height) > 0.5 else { return }
+            DispatchQueue.main.async { self.parent.height = height }
+        }
+    }
+
+    final class InputTextView: NSTextView {
+        weak var coordinator: Coordinator?
+        private var focusedOnce = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            // Focus the composer when the tab opens, like the old TextField.
+            guard let window, !focusedOnce else { return }
+            focusedOnce = true
+            DispatchQueue.main.async { window.makeFirstResponder(self) }
+        }
+
+        override func becomeFirstResponder() -> Bool {
+            let became = super.becomeFirstResponder()
+            if became { coordinator?.setFocused(true) }
+            return became
+        }
+
+        override func resignFirstResponder() -> Bool {
+            let resigned = super.resignFirstResponder()
+            if resigned { coordinator?.setFocused(false) }
+            return resigned
+        }
+
+        override func setFrameSize(_ newSize: NSSize) {
+            let widthChanged = newSize.width != frame.width
+            super.setFrameSize(newSize)
+            if widthChanged { coordinator?.measure(self) }
+        }
+
+        override func keyDown(with event: NSEvent) {
+            let returnKey: UInt16 = 36, keypadEnter: UInt16 = 76, escape: UInt16 = 53
+            // Mid-composition (Japanese, Chinese…) Return and Esc belong to the
+            // input method.
+            guard !hasMarkedText() else { return super.keyDown(with: event) }
+            switch event.keyCode {
+            case returnKey, keypadEnter:
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if flags.contains(.shift) || flags.contains(.option) {
+                    insertNewlineIgnoringFieldEditor(nil)
+                } else {
+                    coordinator?.parent.onSubmit()
+                }
+            case escape:
+                if coordinator?.parent.onCancel() != true { super.keyDown(with: event) }
+            default:
+                super.keyDown(with: event)
+            }
+        }
     }
 }

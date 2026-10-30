@@ -7,6 +7,113 @@ struct AIUsage {
     var outputTokens: Int = 0
     var cacheReadTokens: Int = 0
     var cacheCreationTokens: Int = 0
+    /// Which model these tokens were spent on, so the cost uses its prices.
+    var model = AIModel.default
+}
+
+/// The models the chat can switch between, per question. Claude runs on
+/// Anthropic's API or OpenRouter; everything else is OpenRouter-only, reached
+/// through the same Anthropic-format `/messages` endpoint.
+enum AIModel: String, CaseIterable, Identifiable {
+    // Raw values are persisted (defaults + saved chats) — never rename them.
+    case opus, sonnet, haiku
+    case gptAstra = "gpt-6-astra", gptSol = "gpt-6.1-sol", gptTerra = "gpt-6.1-terra", gptLuna = "gpt-6-luna"
+    case gemini = "gemini-4-argon", grok = "grok-4.7", kimi = "kimi-k3.1-pro", deepseek = "deepseek-v4.1-flash"
+
+    static let `default` = AIModel.opus
+    private static let defaultsKey = "aiModel"
+
+    /// The chat's pick, remembered across launches.
+    static var selected: AIModel {
+        get { UserDefaults.standard.string(forKey: defaultsKey).flatMap(AIModel.init(rawValue:)) ?? .default }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey) }
+    }
+
+    enum Family: String, CaseIterable {
+        case claude = "Claude", openAI = "OpenAI", other = "Other"
+    }
+
+    var id: String { rawValue }
+
+    var family: Family {
+        switch self {
+        case .opus, .sonnet, .haiku: return .claude
+        case .gptAstra, .gptSol, .gptTerra, .gptLuna: return .openAI
+        case .gemini, .grok, .kimi, .deepseek: return .other
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .opus: return "Claude Opus 5.5"
+        case .sonnet: return "Claude Sonnet 5.5"
+        case .haiku: return "Claude Haiku 5.5"
+        case .gptAstra: return "GPT-6 Astra"
+        case .gptSol: return "GPT-6.1 Sol"
+        case .gptTerra: return "GPT-6.1 Terra"
+        case .gptLuna: return "GPT-6 Luna"
+        case .gemini: return "Gemini 4 Argon"
+        case .grok: return "Grok 4.7"
+        case .kimi: return "Kimi K3.1 Pro"
+        case .deepseek: return "DeepSeek V4.1 Flash"
+        }
+    }
+
+    var blurb: String {
+        switch self {
+        case .opus: return "Smartest everyday pick"
+        case .sonnet: return "Fast and smart, half of Opus's price"
+        case .haiku: return "Fastest, a fraction of the cost"
+        case .gptAstra: return "OpenAI's most capable"
+        case .gptSol: return "OpenAI's balanced pick"
+        case .gptTerra: return "Quick and cheap"
+        case .gptLuna: return "OpenAI's fastest and cheapest"
+        case .gemini: return "Google's latest"
+        case .grok: return "xAI's latest"
+        case .kimi: return "Moonshot's latest"
+        case .deepseek: return "Very cheap"
+        }
+    }
+
+    /// The model id on each backend; nil where it isn't offered.
+    fileprivate func apiID(for backend: AIBackend) -> String? {
+        switch (self, backend) {
+        case (_, .anthropic) where family == .claude: return "claude-\(rawValue)-5-5"
+        case (_, .openRouter) where family == .claude: return "anthropic/claude-\(rawValue)-5.5"
+        case (_, .anthropic): return nil
+        case (.gptAstra, _), (.gptSol, _), (.gptTerra, _), (.gptLuna, _): return "openai/\(rawValue)"
+        case (.gemini, _): return "google/\(rawValue)"
+        case (.grok, _): return "x-ai/\(rawValue)"
+        case (.kimi, _): return "moonshotai/\(rawValue)"
+        default: return "deepseek/\(rawValue)"
+        }
+    }
+
+    /// Whether this key can reach the model: only OpenRouter keys (BYOK
+    /// `sk-or-…` or the subscription's) go beyond Claude.
+    func isAvailable(withKey key: String?) -> Bool {
+        guard let key else { return false }
+        return apiID(for: AIBackend(apiKey: key)) != nil
+    }
+
+    /// List prices, USD per million tokens: input, output, cache read, cache
+    /// write (OpenRouter's numbers; input price where it lists no write
+    /// price). Haiku's are its up-to-100K-token tier.
+    var prices: (input: Double, output: Double, cacheRead: Double, cacheWrite: Double) {
+        switch self {
+        case .opus: return (4, 20, 0.2, 5)
+        case .sonnet: return (2, 10, 0.2, 2.5)
+        case .haiku: return (0.1, 0.5, 0.01, 0.125)
+        case .gptAstra: return (10, 50, 1, 12.5)
+        case .gptSol: return (2, 10, 0.1, 2.5)
+        case .gptTerra: return (1, 5, 0.05, 1.25)
+        case .gptLuna: return (0.1, 0.5, 0.01, 0.125)
+        case .gemini: return (2, 10, 0.1, 0.1875)
+        case .grok: return (2, 6, 0.5, 2)
+        case .kimi: return (2, 10, 0.2, 2)
+        case .deepseek: return (0.045, 0.5, 0.006, 0.045)
+        }
+    }
 }
 
 enum AIStreamEvent {
@@ -57,8 +164,9 @@ final class AIToolLoop {
         /// them in the next user message — answering only the terminal call makes
         /// the continuation invalid.
         var unansweredToolIDs: [String] = []
-        /// True when `.failed` was emitted. The history is unusable past this
-        /// point; the caller owns what to roll back to.
+        /// True when the run didn't finish: either `.failed` was emitted, or the
+        /// task was cancelled (`stopReason == "stopped"`, no event). The history
+        /// is unusable past this point; the caller owns what to roll back to.
         var failed = false
     }
 
@@ -78,6 +186,9 @@ final class AIToolLoop {
     /// The raw API history — JSON-serializable by construction. The caller
     /// appends the user turn before `run` and decides what to keep after it.
     var messages: [[String: Any]] = []
+
+    /// Can change between runs: the history carries over to the new model.
+    var model = AIModel.default
 
     /// `AIUsageLog` numbers requests within a turn, and one turn can span more
     /// than one `run` (a report that needs a nudge), so the counters follow the
@@ -105,6 +216,7 @@ final class AIToolLoop {
         }
 
         var outcome = Outcome()
+        outcome.usage.model = model
 
         func fail(_ message: String, _ stopReason: String) -> Outcome {
             onEvent(.failed(message: message))
@@ -113,25 +225,34 @@ final class AIToolLoop {
             return outcome
         }
 
+        // Cancelling the task is the user pressing Stop — not an error to show.
+        func stopped() -> Outcome {
+            outcome.stopReason = "stopped"
+            outcome.failed = true
+            return outcome
+        }
+
         while true {
+            if Task.isCancelled { return stopped() }
             let turn: Turn
             let requestStart = Date()
             do {
                 turn = try await streamTurn(onEvent: onEvent)
             } catch {
+                if Task.isCancelled || Self.isCancellation(error) { return stopped() }
                 return fail(Self.describe(error), (error as? AIClientError)?.stopReason ?? "error")
             }
 
             sequence += 1
             AIUsageLog.recordRequest(
-                turnID: turnID, sequence: sequence, usage: turn.usage,
+                turnID: turnID, sequence: sequence, model: model, usage: turn.usage,
                 latencyMs: Int(Date().timeIntervalSince(requestStart) * 1000))
 
             outcome.usage.inputTokens += turn.usage.inputTokens
             outcome.usage.outputTokens += turn.usage.outputTokens
             outcome.usage.cacheReadTokens += turn.usage.cacheReadTokens
             outcome.usage.cacheCreationTokens += turn.usage.cacheCreationTokens
-            messages.append(["role": "assistant", "content": turn.content])
+            messages.append(["role": "assistant", "content": turn.content, Self.producerKey: model.rawValue])
 
             switch turn.stopReason {
             case "tool_use":
@@ -206,7 +327,7 @@ final class AIToolLoop {
         // re-reads the whole prior conversation at the cached rate instead of
         // full input price — on long tool loops that is most of the bill.
         // (Value semantics: this never mutates the stored history.)
-        var requestMessages = messages
+        var requestMessages = Self.forModel(model, messages)
         if var last = requestMessages.last,
            var content = last["content"] as? [[String: Any]],
            var block = content.last {
@@ -217,7 +338,7 @@ final class AIToolLoop {
         }
 
         var body: [String: Any] = [
-            "model": backend.model,
+            "model": model.apiID(for: backend) ?? AIModel.default.apiID(for: backend) ?? "",
             "max_tokens": config.maxTokens,
             "stream": true,
             "system": [[
@@ -356,6 +477,29 @@ final class AIToolLoop {
 
     // MARK: - Plumbing
 
+    /// App-side tag on each assistant turn naming the model that wrote it.
+    /// Never sent: `forModel` strips it from every request.
+    private static let producerKey = "_model"
+
+    /// The history as `model` should get it. Thinking blocks only mean
+    /// something within one family — Claude's are signed by Anthropic, and
+    /// another provider's reasoning isn't Claude's — so they cross a switch
+    /// between Claude and a non-Claude model as nothing. Within Claude they're
+    /// passed back unchanged; the API drops any a model can't read.
+    private static func forModel(_ model: AIModel, _ messages: [[String: Any]]) -> [[String: Any]] {
+        messages.map { message in
+            guard message["role"] as? String == "assistant" else { return message }
+            var message = message
+            let producer = (message.removeValue(forKey: producerKey) as? String).flatMap(AIModel.init(rawValue:)) ?? .default
+            let sameSide = (producer.family == .claude) == (model.family == .claude)
+            if !sameSide, let content = message["content"] as? [[String: Any]] {
+                let kept = content.filter { !["thinking", "redacted_thinking"].contains($0["type"] as? String ?? "") }
+                message["content"] = kept.isEmpty ? [["type": "text", "text": "…"]] : kept
+            }
+            return message
+        }
+    }
+
     /// message_start and message_delta both report the running totals for the
     /// same message, so the later report wins rather than adding to the earlier.
     /// A null field (OpenRouter's message_delta sends `input_tokens: null`)
@@ -378,6 +522,10 @@ final class AIToolLoop {
         }
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         return json["error"] as? [String: Any]
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 
     private static func describe(_ error: Error) -> String {
@@ -456,25 +604,46 @@ final class AIChatSession {
     /// Asks one question and runs the whole tool loop, emitting events as they
     /// stream. Never throws: every failure arrives as `.failed`. On failure the
     /// history is rolled back to before the question, so a retry starts clean.
-    func ask(_ text: String, onEvent: @escaping (AIStreamEvent) -> Void) async {
+    /// Cancelling the calling task stops the answer (`stopReason "stopped"`).
+    func ask(_ text: String, model: AIModel, onEvent: @escaping (AIStreamEvent) -> Void) async {
         guard !isRunning else { return }
         isRunning = true
         defer { isRunning = false }
+        loop.model = model
 
         let snapshot = loop.messages
-        loop.messages.append([
+        let question: [String: Any] = [
             "role": "user",
             "content": [["type": "text", "text": "(Today is \(Self.today()).) " + text]],
-        ])
+        ]
+        loop.messages.append(question)
 
         let turnID = UUID()
-        let outcome = await loop.run(turnID: turnID, onEvent: onEvent)
+        var streamed = ""
+        let outcome = await loop.run(turnID: turnID) { event in
+            if case .textDelta(let chunk) = event { streamed += chunk }
+            onEvent(event)
+        }
 
         // Any exit that isn't a finished answer leaves the history unusable — an
         // assistant turn holding tool_use blocks with no tool_result after it, or
         // a block the stream cut in half — and the API rejects every later turn.
         // Roll back to before the question instead.
-        if outcome.failed { loop.messages = snapshot }
+        if outcome.failed {
+            loop.messages = snapshot
+            // A stopped answer stays in context as plain text, so a follow-up
+            // ("no, I meant…") can steer from what was already said.
+            if outcome.stopReason == "stopped" {
+                let said = streamed.trimmingCharacters(in: .whitespacesAndNewlines)
+                loop.messages.append(question)
+                loop.messages.append([
+                    "role": "assistant",
+                    "content": [["type": "text", "text": said.isEmpty
+                        ? "(The user stopped this before I answered.)"
+                        : said + "\n\n(The user stopped this answer here.)"]],
+                ])
+            }
+        }
         onEvent(.turnCompleted(turnID: turnID, usage: outcome.usage, stopReason: outcome.stopReason))
     }
 
@@ -502,13 +671,6 @@ private enum AIBackend {
         switch self {
         case .anthropic: return URL(string: "https://api.anthropic.com/v1/messages")!
         case .openRouter: return URL(string: "https://openrouter.ai/api/v1/messages")!
-        }
-    }
-
-    var model: String {
-        switch self {
-        case .anthropic: return "claude-opus-5"
-        case .openRouter: return "anthropic/claude-opus-5"
         }
     }
 
