@@ -57,8 +57,9 @@ final class AIToolLoop {
         /// them in the next user message — answering only the terminal call makes
         /// the continuation invalid.
         var unansweredToolIDs: [String] = []
-        /// True when `.failed` was emitted. The history is unusable past this
-        /// point; the caller owns what to roll back to.
+        /// True when the run didn't finish: either `.failed` was emitted, or the
+        /// task was cancelled (`stopReason == "stopped"`, no event). The history
+        /// is unusable past this point; the caller owns what to roll back to.
         var failed = false
     }
 
@@ -113,12 +114,21 @@ final class AIToolLoop {
             return outcome
         }
 
+        // Cancelling the task is the user pressing Stop — not an error to show.
+        func stopped() -> Outcome {
+            outcome.stopReason = "stopped"
+            outcome.failed = true
+            return outcome
+        }
+
         while true {
+            if Task.isCancelled { return stopped() }
             let turn: Turn
             let requestStart = Date()
             do {
                 turn = try await streamTurn(onEvent: onEvent)
             } catch {
+                if Task.isCancelled || Self.isCancellation(error) { return stopped() }
                 return fail(Self.describe(error), (error as? AIClientError)?.stopReason ?? "error")
             }
 
@@ -380,6 +390,10 @@ final class AIToolLoop {
         return json["error"] as? [String: Any]
     }
 
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
+    }
+
     private static func describe(_ error: Error) -> String {
         switch error {
         case let error as AIClientError:
@@ -456,25 +470,45 @@ final class AIChatSession {
     /// Asks one question and runs the whole tool loop, emitting events as they
     /// stream. Never throws: every failure arrives as `.failed`. On failure the
     /// history is rolled back to before the question, so a retry starts clean.
+    /// Cancelling the calling task stops the answer (`stopReason "stopped"`).
     func ask(_ text: String, onEvent: @escaping (AIStreamEvent) -> Void) async {
         guard !isRunning else { return }
         isRunning = true
         defer { isRunning = false }
 
         let snapshot = loop.messages
-        loop.messages.append([
+        let question: [String: Any] = [
             "role": "user",
             "content": [["type": "text", "text": "(Today is \(Self.today()).) " + text]],
-        ])
+        ]
+        loop.messages.append(question)
 
         let turnID = UUID()
-        let outcome = await loop.run(turnID: turnID, onEvent: onEvent)
+        var streamed = ""
+        let outcome = await loop.run(turnID: turnID) { event in
+            if case .textDelta(let chunk) = event { streamed += chunk }
+            onEvent(event)
+        }
 
         // Any exit that isn't a finished answer leaves the history unusable — an
         // assistant turn holding tool_use blocks with no tool_result after it, or
         // a block the stream cut in half — and the API rejects every later turn.
         // Roll back to before the question instead.
-        if outcome.failed { loop.messages = snapshot }
+        if outcome.failed {
+            loop.messages = snapshot
+            // A stopped answer stays in context as plain text, so a follow-up
+            // ("no, I meant…") can steer from what was already said.
+            if outcome.stopReason == "stopped" {
+                let said = streamed.trimmingCharacters(in: .whitespacesAndNewlines)
+                loop.messages.append(question)
+                loop.messages.append([
+                    "role": "assistant",
+                    "content": [["type": "text", "text": said.isEmpty
+                        ? "(The user stopped this before I answered.)"
+                        : said + "\n\n(The user stopped this answer here.)"]],
+                ])
+            }
+        }
         onEvent(.turnCompleted(turnID: turnID, usage: outcome.usage, stopReason: outcome.stopReason))
     }
 

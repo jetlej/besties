@@ -8,54 +8,101 @@ struct MarkdownBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(Self.blocks(text).enumerated()), id: \.offset) { _, block in
-                blockView(block)
+            ForEach(Array(Self.segments(Self.blocks(text)).enumerated()), id: \.offset) { _, segment in
+                switch segment {
+                case .text(let content):
+                    Text(content)
+                case .table(let header, let rows):
+                    table(header: header, rows: rows)
+                }
             }
         }
     }
 
-    @ViewBuilder
-    private func blockView(_ block: Block) -> some View {
-        switch block {
-        case .paragraph(let content):
-            Text(content)
-        case .heading(let content, let level):
-            Text(content)
-                .font(level <= 1 ? .title3.bold() : level == 2 ? .headline : .subheadline.bold())
-                .padding(.top, 2)
-        case .items(let items):
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(item.marker)
-                            .foregroundStyle(Color.ink.opacity(0.5))
-                        Text(item.content)
+    private func table(header: [AttributedString], rows: [[AttributedString]]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                GridRow {
+                    ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
+                        Text(cell).font(.callout.weight(.semibold))
                     }
                 }
-            }
-        case .table(let header, let rows):
-            ScrollView(.horizontal, showsIndicators: false) {
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                Divider()
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
                     GridRow {
-                        ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                            Text(cell).font(.callout.weight(.semibold))
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                            Text(cell)
                         }
                     }
-                    Divider()
-                    ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                        GridRow {
-                            ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                                Text(cell)
-                            }
-                        }
-                        if index < rows.count - 1 { Divider() }
-                    }
+                    if index < rows.count - 1 { Divider() }
                 }
-                .padding(10)
             }
-            .background(Color.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+            .padding(10)
         }
+        .background(Color.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
     }
+
+    // MARK: - Layout
+
+    /// What actually renders. Paragraphs, headings and lists between tables
+    /// fold into one Text, because a selection can't cross from one Text to
+    /// the next — separate views would let you highlight only a paragraph at
+    /// a time.
+    private enum Segment {
+        case text(AttributedString)
+        case table(header: [AttributedString], rows: [[AttributedString]])
+    }
+
+    private static func segments(_ blocks: [Block]) -> [Segment] {
+        var segments: [Segment] = []
+        var run: AttributedString?
+
+        func append(_ piece: AttributedString) {
+            if run == nil {
+                run = piece
+            } else {
+                run!.append(paragraphBreak)
+                run!.append(piece)
+            }
+        }
+        func flush() {
+            if let run { segments.append(.text(run)) }
+            run = nil
+        }
+
+        for block in blocks {
+            switch block {
+            case .paragraph(let content):
+                append(content)
+            case .heading(var content, let level):
+                content.font = level <= 1 ? .title3.bold() : level == 2 ? .headline : .subheadline.bold()
+                append(content)
+            case .items(let items):
+                var list = AttributedString()
+                for (index, item) in items.enumerated() {
+                    if index > 0 { list.append(AttributedString("\n")) }
+                    var marker = AttributedString(item.marker + "\u{2002}")
+                    marker.foregroundColor = Color.ink.opacity(0.5)
+                    list.append(marker)
+                    list.append(item.content)
+                }
+                append(list)
+            case .table(let header, let rows):
+                flush()
+                segments.append(.table(header: header, rows: rows))
+            }
+        }
+        flush()
+        return segments
+    }
+
+    /// A line break plus a short empty line: a paragraph gap about the size
+    /// of the old 8pt stack spacing, rather than a full blank line.
+    private static let paragraphBreak: AttributedString = {
+        var gap = AttributedString("\n\n")
+        gap.font = .system(size: 5)
+        return gap
+    }()
 
     // MARK: - Parsing
 
