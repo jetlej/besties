@@ -60,8 +60,8 @@ final class SubscriptionManager {
     static let subscribeURL = URL(string: "https://besties.gg/#ai")!
 
     /// What the subscription buys each month, in USD of model usage. Must equal
-    /// MONTHLY_CREDIT in site/api/_lib/plan.js ($3 keeps a ~$3.29 margin on the
-    /// $7 plan at full use). The meter's denominator is this constant, not the
+    /// MONTHLY_CREDIT in site/api/_lib/plan.js. The meter's denominator is this
+    /// constant, not the
     /// key's OpenRouter `limit`: each month's top-up sets the limit to
     /// `usage + credit`, so `limit` grows forever while `limit_remaining` is
     /// the month's balance.

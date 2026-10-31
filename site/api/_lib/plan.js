@@ -3,9 +3,7 @@
 // AI_PRICE_MONTHLY / AI_PRICE_YEARLY from site/build.sh — keep all three equal.
 //
 // MONTHLY_CREDIT is the OpenRouter spend limit added each month (USD of model
-// usage). $3 keeps a ~$3.29 margin on the $7 plan even if every cent is used:
-//   $7 − Stripe (2.9% + 0.7% Billing + $0.30 = $0.55) − $3 × 1.055 (OpenRouter's
-//   5.5% credit fee) = $3.29 ($3.18 on an international card, +1.5%).
+// usage). Users only ever see it as credits (1 credit = $0.001).
 // The app's meter denominator (SubscriptionManager.monthlyCredit) must match.
 const MONTHLY_CREDIT = Number(process.env.AI_MONTHLY_CREDIT || 3);
 

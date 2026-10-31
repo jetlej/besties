@@ -189,7 +189,7 @@ struct AIChooserView: View {
         case .localApp: return "LM Studio, Claude Desktop, Cursor… With a local model, nothing leaves your Mac."
         case .chatGPT: return "Runs on your ChatGPT Plus or Pro plan."
         case .ownKey: return "Anthropic bills you directly for what you use."
-        case .besties: return "Nothing to set up. Claude, GPT and more, with $3 of AI every month."
+        case .besties: return "Nothing to set up. Claude, GPT and more, with 3,000 AI credits every month."
         }
     }
 
