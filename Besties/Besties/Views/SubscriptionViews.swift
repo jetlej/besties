@@ -554,3 +554,105 @@ struct AICreditMeter: View {
         }
     }
 }
+
+// MARK: - Settings card
+
+/// Settings: who's signed into Besties AI, and the ways in when nobody is.
+/// Same facts as the account popover, but reachable without the paywall —
+/// with a dev key or an active source the paywall never shows, so this is
+/// where the other options stay visible.
+struct AIAccountSettingsCard: View {
+    private let subscription = SubscriptionManager.shared
+    private let chatGPT = ChatGPTAuth.shared
+    @State private var showSignIn = false
+    @State private var notice: String?
+
+    var body: some View {
+        SettingsCard(title: "Besties AI") {
+            if subscription.isDevKey {
+                // DEV CARVE-OUT — REMOVE AT SHIP (SubscriptionManager.devKey).
+                Text("Using the dev key from the anthropicKey default.")
+                    .settingsCaption()
+            } else if subscription.usesChatGPTPlan {
+                HStack {
+                    Text("Using your ChatGPT plan — \(chatGPT.email ?? "signed in")")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(Color.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button("Sign out") { chatGPT.signOut() }
+                        .buttonStyle(.plain)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Color.orange)
+                }
+            } else if subscription.isActive {
+                HStack {
+                    Text("Signed in as \(subscription.email ?? "you")")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(Color.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Button("Sign out") { subscription.signOut() }
+                        .buttonStyle(.plain)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Color.orange)
+                }
+                AICreditMeter()
+            } else {
+                Text("Ask anything about your messages — $7/mo, or free on your ChatGPT plan.")
+                    .settingsCaption()
+            }
+
+            if !subscription.isActive || subscription.isDevKey {
+                HStack(spacing: 14) {
+                    if !subscription.isActive {
+                        Button("Subscribe") { NSWorkspace.shared.open(SubscriptionManager.subscribeURL) }
+                            .buttonStyle(.plain)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(Color.brandBlue)
+                        Button("Sign in") { notice = nil; showSignIn = true }
+                            .buttonStyle(.plain)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(Color.brandBlue)
+                    }
+                    if chatGPT.state == .signingIn {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Finish signing in in your browser…")
+                                .font(.callout)
+                                .foregroundStyle(Color.ink.opacity(0.55))
+                        }
+                    } else if !chatGPT.isSignedIn {
+                        Button("Use your ChatGPT plan") {
+                            notice = nil
+                            Task {
+                                do { try await chatGPT.signIn() }
+                                catch let error as ChatGPTAuth.AuthError { notice = error.message }
+                                catch { notice = error.localizedDescription }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Color.brandBlue)
+                    } else if subscription.isDevKey {
+                        Text("ChatGPT connected — used once the dev key is removed.")
+                            .settingsCaption()
+                    }
+                    Spacer()
+                }
+            }
+
+            if let notice {
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .sheet(isPresented: $showSignIn) {
+            AISignInSheet { error in notice = error?.message }
+        }
+    }
+}

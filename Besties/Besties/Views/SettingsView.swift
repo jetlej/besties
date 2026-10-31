@@ -2,67 +2,17 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var appState: AppState
-    @State private var tab = SettingsTab.general
-    @Namespace private var pillNS
-
-    enum SettingsTab: String, CaseIterable {
-        case general = "General"
-        case aiApps = "AI Apps"
-
-        var systemImage: String {
-            switch self {
-            case .general: return "gearshape.fill"
-            case .aiApps: return "sparkles"
-            }
-        }
-    }
 
     var body: some View {
-        VStack(spacing: 16) {
-            tabBar
-            switch tab {
-            case .general: GeneralSettingsView(appState: appState)
-            case .aiApps: MCPSettingsView(mcp: appState.mcp)
-            }
+        VStack(spacing: 12) {
+            GeneralSettingsView(appState: appState)
+            AIAccountSettingsCard()
+            MCPSettingsView(mcp: appState.mcp)
         }
         .padding(20)
         .frame(width: 500)
         .background(Color.paper)
         .preferredColorScheme(.light)
-    }
-
-    /// Same look as the main window's tab bar: sun pill on a flat gray track.
-    private var tabBar: some View {
-        HStack(spacing: 2) {
-            ForEach(SettingsTab.allCases, id: \.self) { item in
-                Button {
-                    withAnimation(.spring(duration: 0.28)) { tab = item }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: item.systemImage)
-                            .font(.system(size: 12, weight: .bold))
-                        Text(item.rawValue)
-                            .font(.system(size: 13, weight: .bold))
-                            .lineLimit(1)
-                            .fixedSize()
-                    }
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity)
-                    .foregroundStyle(tab == item ? Color.ink : Color.ink.opacity(0.55))
-                    .background {
-                        if tab == item {
-                            RoundedRectangle(cornerRadius: 9)
-                                .fill(Color.sun)
-                                .matchedGeometryEffect(id: "pill", in: pillNS)
-                        }
-                    }
-                    .contentShape(RoundedRectangle(cornerRadius: 9))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(3)
-        .background(Color.ink.opacity(0.065), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
