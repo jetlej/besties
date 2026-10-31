@@ -249,6 +249,12 @@ struct AIChatView: View {
     @State private var momentPicker: AIMomentPicker.Moment?
     @State private var pendingKind: AIReportKind?
     @State private var reportRequest: ReportRequest?
+    /// The chooser, as a sheet: the tab always shows the chat (so people see
+    /// what they'd get), and acting on it without AI set up asks how first.
+    @State private var showSetup = false
+    /// What they tried before setting up — run once a way is in place.
+    @State private var pendingMoment: AIMomentPicker.Moment?
+    @State private var pendingReport: AIReportKind?
     private let subscription = SubscriptionManager.shared
 
     init(appState: AppState) {
@@ -257,19 +263,7 @@ struct AIChatView: View {
     }
 
     var body: some View {
-        Group {
-            if subscription.isActive {
-                chat
-            } else {
-                ScrollView {
-                    AIChooserView(mcp: appState.mcp)
-                        .frame(maxWidth: 560)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 32)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-        }
+        chat
         .background(Color.paper)
         // Reconnect's ✨ button switches to this tab and leaves a request
         // behind; the tab is built fresh on the switch, so both the arrival
@@ -289,6 +283,14 @@ struct AIChatView: View {
                 momentPicker = nil
             }
         }
+        .sheet(isPresented: $showSetup, onDismiss: resumeAfterSetup) {
+            AISetupSheet(mcp: appState.mcp)
+        }
+        // A chat way just came online (ChatGPT, a key, a subscription):
+        // close the chooser; onDismiss picks up where they left off.
+        .onChange(of: subscription.isActive) {
+            if subscription.isActive, showSetup { showSetup = false }
+        }
         .sheet(item: $reportRequest) { request in
             AIReportView(appState: appState, kind: request.kind)
                 .frame(minWidth: 520, idealWidth: 620, minHeight: 520, idealHeight: 720)
@@ -298,11 +300,46 @@ struct AIChatView: View {
     private func consumeReportRequest() {
         guard let kind = appState.aiReportRequest else { return }
         appState.aiReportRequest = nil
-        // Until a way is set up this tab is the chooser (and Reconnect's ✨
-        // is hidden), so drop the request — cleared above, so it doesn't fire
-        // again — and leave the chooser up.
-        guard subscription.isActive else { return }
+        guard subscription.isActive else {
+            pendingReport = kind
+            showSetup = true
+            return
+        }
         reportRequest = ReportRequest(kind: kind)
+    }
+
+    /// Send, or — with no AI set up yet — keep the draft and ask how first.
+    private func sendOrSetUp() {
+        if subscription.isActive {
+            model.send()
+        } else if !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            showSetup = true
+        }
+    }
+
+    private func openMoment(_ moment: AIMomentPicker.Moment) {
+        if subscription.isActive {
+            momentPicker = moment
+        } else {
+            pendingMoment = moment
+            showSetup = true
+        }
+    }
+
+    /// After the chooser closes: carry on with whatever they tried, if a way
+    /// is now set up; otherwise drop it (the draft stays in the box).
+    private func resumeAfterSetup() {
+        let moment = pendingMoment, report = pendingReport
+        pendingMoment = nil
+        pendingReport = nil
+        guard subscription.isActive else { return }
+        if let report {
+            reportRequest = ReportRequest(kind: report)
+        } else if let moment {
+            momentPicker = moment
+        } else {
+            model.send()
+        }
     }
 
     // MARK: - Chat
@@ -370,7 +407,7 @@ struct AIChatView: View {
                     }
                 }
             }
-            AIAccountButton()
+            AIAccountButton(mcpController: appState.mcp)
         }
         .padding(10)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -532,7 +569,7 @@ struct AIChatView: View {
                     ForEach(Self.suggestions, id: \.prompt) { suggestion in
                         Button {
                             model.draft = suggestion.prompt
-                            model.send()
+                            sendOrSetUp()
                         } label: {
                             Text("\(suggestion.emoji) \(suggestion.prompt)")
                                 .font(.callout.weight(.medium))
@@ -572,7 +609,7 @@ struct AIChatView: View {
             HStack(alignment: .top, spacing: 10) {
                 ForEach(Self.momentCards, id: \.moment) { card in
                     Button {
-                        momentPicker = card.moment
+                        openMoment(card.moment)
                     } label: {
                         VStack(spacing: 4) {
                             Text(card.emoji)
@@ -610,7 +647,7 @@ struct AIChatView: View {
         let draftIsEmpty = model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return HStack(alignment: .bottom, spacing: 8) {
             ChatInputField(text: $model.draft, height: $inputHeight, isFocused: $inputFocused,
-                           onSubmit: { model.send() },
+                           onSubmit: { sendOrSetUp() },
                            onCancel: {
                                guard model.isRunning else { return false }
                                model.stop()
@@ -637,7 +674,7 @@ struct AIChatView: View {
                 .help("Stop (Esc)")
             } else {
                 Button {
-                    model.send()
+                    sendOrSetUp()
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title3)
@@ -675,7 +712,7 @@ extension AIChatView {
                             model.model = option
                         } label: {
                             // Plan usage has no credit price, so the suffix goes.
-                            let line = subscription.usesChatGPTPlan
+                            let line = subscription.usesChatGPTPlan || subscription.usesOwnKey
                                 ? "\(option.label) — \(option.blurb)"
                                 : "\(option.label) — \(option.blurb) · ~\(option.creditsPerAnswer) credit\(option.creditsPerAnswer == 1 ? "" : "s")/answer"
                             if option == model.model {
@@ -684,14 +721,14 @@ extension AIChatView {
                                 Text(line)
                             }
                         }
-                        .disabled(!option.isAvailable(withKey: key))
+                        .disabled(key != nil && !option.isAvailable(withKey: key))
                     }
                 }
             }
             if subscription.usesChatGPTPlan {
                 Divider()
                 Text("Claude and other models need Besties AI or an OpenRouter key")
-            } else if !AIModel.gptSol.isAvailable(withKey: key) {
+            } else if key != nil, !AIModel.gptSol.isAvailable(withKey: key) {
                 Divider()
                 Text("GPT and other non-Claude models need Besties AI or an OpenRouter key")
             }

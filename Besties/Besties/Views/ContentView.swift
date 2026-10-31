@@ -155,9 +155,9 @@ struct ContentView: View {
 
     private static let searchFieldWidth: CGFloat = 220
 
-    /// The ✨ column: only with an active AI key — without one the AI tab is
-    /// the paywall, and a draft request would just be dropped there.
-    private var showsAIActions: Bool { SubscriptionManager.shared.isActive }
+    /// The ✨ column. Always shown: without AI set up, the AI tab asks how
+    /// first and then runs the request.
+    private var showsAIActions: Bool { true }
 
     /// The people filter, right-aligned directly above whichever list it filters.
     private var filterRow: some View {

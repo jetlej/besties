@@ -75,8 +75,8 @@ struct AIChooserView: View {
             }
         }
         .onAppear { if selected == nil { selected = inUse } }
-        .animation(.spring(duration: 0.3), value: selected)
-        .animation(.spring(duration: 0.3), value: inUse)
+        .animation(.easeInOut(duration: 0.25), value: selected)
+        .animation(.easeInOut(duration: 0.25), value: inUse)
         .sheet(isPresented: $showSignIn) {
             AISignInSheet { error in
                 notice = error?.message
@@ -122,7 +122,11 @@ struct AIChooserView: View {
                     .padding(.horizontal, compact ? 10 : 14)
                     .padding(.bottom, compact ? 12 : 16)
                     .padding(.leading, compact ? 46 : 54)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    // Content fades in once the card has grown, so the card
+                    // reads as unfolding downward rather than sliding.
+                    .transition(.asymmetric(
+                        insertion: .opacity.animation(.easeOut(duration: 0.18).delay(0.12)),
+                        removal: .opacity.animation(.easeIn(duration: 0.1))))
             }
         }
         .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
@@ -576,6 +580,7 @@ struct AISignInSheet: View {
 
 /// Sidebar footer of the chat: who's signed in, BYOK, sign out.
 struct AIAccountButton: View {
+    let mcpController: MCPController
     private let subscription = SubscriptionManager.shared
     @State private var showing = false
 
@@ -592,8 +597,12 @@ struct AIAccountButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showing, arrowEdge: .trailing) {
+        .popover(isPresented: Binding(get: { showing && subscription.isActive }, set: { showing = $0 }),
+                 arrowEdge: .trailing) {
             AIAccountPopover()
+        }
+        .sheet(isPresented: Binding(get: { showing && !subscription.isActive }, set: { showing = $0 })) {
+            AISetupSheet(mcp: mcpController)
         }
     }
 
@@ -601,6 +610,7 @@ struct AIAccountButton: View {
         if subscription.isDevKey { return "Dev key" }
         if subscription.usesChatGPTPlan { return ChatGPTAuth.shared.email ?? "ChatGPT plan" }
         if subscription.usesOwnKey { return "Your API key" }
+        if !subscription.isActive { return "Set up AI" }
         return subscription.email ?? "Account"
     }
 }
@@ -673,5 +683,33 @@ struct AICreditMeter: View {
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(Color.ink.opacity(0.45))
         }
+    }
+}
+
+// MARK: - Setup sheet
+
+/// The chooser as a modal: what the AI tab opens when someone acts on it
+/// before picking a way. Fixed size — expanding an option scrolls.
+struct AISetupSheet: View {
+    @Bindable var mcp: MCPController
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                AIChooserView(mcp: mcp)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 28)
+                    .padding(.bottom, 12)
+            }
+            Button("Not now") { dismiss() }
+                .buttonStyle(.plain)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(Color.ink.opacity(0.5))
+                .keyboardShortcut(.cancelAction)
+                .padding(.vertical, 14)
+        }
+        .frame(width: 580, height: 600)
+        .background(Color.paper)
     }
 }
