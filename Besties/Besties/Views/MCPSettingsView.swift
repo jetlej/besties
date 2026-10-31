@@ -5,18 +5,9 @@ import AppKit
 /// copy its one setup snippet.
 struct MCPSettingsView: View {
     @Bindable var mcp: MCPController
-    @State private var app = ClientApp.lmStudio
     @State private var showToken = false
     @State private var copied = false
     @State private var portDraft = ""
-
-    /// The apps we can hand a ready-made config. One is shown at a time.
-    enum ClientApp: String, CaseIterable {
-        case lmStudio = "LM Studio"
-        case cursor = "Cursor"
-        case claudeDesktop = "Claude Desktop"
-        case other = "Other"
-    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -44,14 +35,8 @@ struct MCPSettingsView: View {
             }
 
             if mcp.enabled {
-                SettingsCard(title: "Set up your app") {
-                    Picker("", selection: $app) {
-                        ForEach(ClientApp.allCases, id: \.self) { Text($0.rawValue) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-
-                    Text(note)
+                SettingsCard(title: "Connect an app") {
+                    Text("Copy this and paste it into the AI app you want to use — it has everything the app needs.")
                         .settingsCaption()
 
                     snippetBox
@@ -63,7 +48,7 @@ struct MCPSettingsView: View {
                             copied = true
                             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
                         } label: {
-                            Text(copied ? "Copied ✓" : "Copy for \(app.rawValue)")
+                            Text(copied ? "Copied ✓" : "Copy setup")
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .foregroundStyle(Color.ink)
                                 .padding(.vertical, 6)
@@ -139,41 +124,18 @@ struct MCPSettingsView: View {
             .background(Color.bubbleTan, in: RoundedRectangle(cornerRadius: 8))
     }
 
-    /// Where to paste the snippet, per app. One line each.
-    private var note: String {
-        switch app {
-        case .lmStudio: return "Program → Install → Edit mcp.json, paste, save. Best with a local model: fully private."
-        case .cursor: return "Settings → MCP → Add new server, paste, save."
-        case .claudeDesktop: return "Settings → Developer → Edit Config, paste, save. Needs Node.js, and Claude sends what it reads to Anthropic."
-        case .other: return "Any MCP app that takes a URL works. Command-only apps: use the Claude Desktop snippet."
-        }
-    }
-
-    private var snippet: String { app == .claudeDesktop ? commandConfig : urlConfig }
-
     private var serverName: String { appName.lowercased().replacingOccurrences(of: " ", with: "-") }
 
-    private var urlConfig: String {
+    /// The standard mcp.json shape — LM Studio, Cursor and most MCP apps take
+    /// it as-is, and it carries the URL and token for any app that asks for
+    /// them separately.
+    private var snippet: String {
         """
         {
           "mcpServers": {
             "\(serverName)": {
               "url": "\(mcp.endpoint)",
               "headers": { "Authorization": "Bearer \(mcp.token)" }
-            }
-          }
-        }
-        """
-    }
-
-    private var commandConfig: String {
-        """
-        {
-          "mcpServers": {
-            "\(serverName)": {
-              "command": "npx",
-              "args": ["-y", "mcp-remote", "\(mcp.endpoint)", "--allow-http", "--header", "Authorization:${AUTH_HEADER}"],
-              "env": { "AUTH_HEADER": "Bearer \(mcp.token)" }
             }
           }
         }
