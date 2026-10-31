@@ -43,7 +43,7 @@ struct AIPaywallView: View {
                             .background(Color.sun, in: RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
-                    Text("Or $69/year. AI credit every month. Cancel anytime.")
+                    Text("Or $69/year. 2,200 AI credits every month. Cancel anytime.")
                         .font(.caption)
                         .foregroundStyle(Color.ink.opacity(0.5))
                 }
@@ -486,14 +486,16 @@ private struct AIAccountPopover: View {
 
 // MARK: - Meter
 
-/// "$X.XX of $2.20 left this month" — the minted key's credit, straight from
-/// OpenRouter. Absent for the dev key and for BYOK.
+/// "X of 2,200 credits left this month" — the minted key's credit, straight
+/// from OpenRouter (1 credit = $0.001 of usage). Absent for the dev key and
+/// for BYOK.
 struct AICreditMeter: View {
     private let subscription = SubscriptionManager.shared
 
     var body: some View {
         if subscription.showsMeter, let remaining = subscription.creditRemaining {
-            Text(String(format: "$%.2f of $%.2f left this month", remaining, SubscriptionManager.monthlyCredit))
+            let credits = Int((remaining / SubscriptionManager.creditUSD).rounded(.down))
+            Text("\(credits.formatted()) of \(SubscriptionManager.monthlyCredits.formatted()) credits left this month")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(Color.ink.opacity(0.45))
         }

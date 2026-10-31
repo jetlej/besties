@@ -18,8 +18,8 @@ Haiku 5.5.
 
 Busy-month summary ≈ 20,000 input tokens (~1,000 messages) + 350 out; hello ≈
 4,000 in + 60 out. "ZDR provider" is the cheapest zero-data-retention endpoint,
-which is the only kind the relay uses. Models with **none** can't be used by
-the relay.
+which is the only kind the bench routes to. Models with **none** have no
+zero-data-retention option.
 
 | Model | $/M in | $/M out | ZDR provider | $/busy-month summary | $/hello | Summaries per $1 |
 |---|---|---|---|---|---|---|

@@ -468,7 +468,11 @@ struct AIChatView: View {
     private func footerRow(_ item: ChatItem) -> some View {
         let usage = item.usage
         let tokens = "\(usage.inputTokens.formatted()) in · \(usage.outputTokens.formatted()) out · \(usage.cacheReadTokens.formatted()) cached · \(usage.cacheCreationTokens.formatted()) written"
-        let cost = String(format: "$%.4f", usage.costUSD)
+        // Subscribers think in credits (the meter's unit); BYOK and the dev
+        // key pay real dollars.
+        let cost = SubscriptionManager.shared.showsMeter
+            ? "~\(max(1, Int((usage.costUSD / SubscriptionManager.creditUSD).rounded()))) credits"
+            : String(format: "$%.4f", usage.costUSD)
         let stop = item.stopReason == "end_turn" ? "" : " · \(item.stopReason)"
         let answer = model.answer(endingAt: item.id)
         return HStack(spacing: 10) {
@@ -657,10 +661,11 @@ extension AIChatView {
                         Button {
                             model.model = option
                         } label: {
+                            let line = "\(option.label) — \(option.blurb) · ~\(option.creditsPerAnswer) credit\(option.creditsPerAnswer == 1 ? "" : "s")/answer"
                             if option == model.model {
-                                Label("\(option.label) — \(option.blurb)", systemImage: "checkmark")
+                                Label(line, systemImage: "checkmark")
                             } else {
-                                Text("\(option.label) — \(option.blurb)")
+                                Text(line)
                             }
                         }
                         .disabled(!option.isAvailable(withKey: key))

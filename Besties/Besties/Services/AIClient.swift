@@ -20,7 +20,10 @@ enum AIModel: String, CaseIterable, Identifiable {
     case gptAstra = "gpt-6-astra", gptSol = "gpt-6.1-sol", gptTerra = "gpt-6.1-terra", gptLuna = "gpt-6-luna"
     case gemini = "gemini-4-argon", grok = "grok-4.7", kimi = "kimi-k3.1-pro", deepseek = "deepseek-v4.1-flash"
 
-    static let `default` = AIModel.opus
+    // The bench's decision rule (scripts/ai-bench/RESULTS.md) picks the
+    // default; Haiku is its fallback until the hosted run happens. Opus here
+    // would burn the $2.20 monthly credit in ~25 report-sized answers.
+    static let `default` = AIModel.haiku
     private static let defaultsKey = "aiModel"
 
     /// The chat's pick, remembered across launches.
@@ -62,8 +65,8 @@ enum AIModel: String, CaseIterable, Identifiable {
     var blurb: String {
         switch self {
         case .opus: return "Smartest everyday pick"
-        case .sonnet: return "Fast and smart, half of Opus's price"
-        case .haiku: return "Fastest, a fraction of the cost"
+        case .sonnet: return "Fast and smart"
+        case .haiku: return "Fastest"
         case .gptAstra: return "OpenAI's most capable"
         case .gptSol: return "OpenAI's balanced pick"
         case .gptTerra: return "Quick and cheap"
@@ -94,6 +97,15 @@ enum AIModel: String, CaseIterable, Identifiable {
     func isAvailable(withKey key: String?) -> Bool {
         guard let key else { return false }
         return apiID(for: AIBackend(apiKey: key)) != nil
+    }
+
+    /// ~Credits one report-sized answer costs (a busy-month recap: 20K input
+    /// + 350 output tokens, the sizing in scripts/ai-bench/RESULTS.md) at
+    /// list prices. Tool-loop chat answers cost more.
+    var creditsPerAnswer: Int {
+        let price = prices
+        let usd = (20_000 * price.input + 350 * price.output) / 1_000_000
+        return max(1, Int((usd / SubscriptionManager.creditUSD).rounded()))
     }
 
     /// List prices, USD per million tokens: input, output, cache read, cache

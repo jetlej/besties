@@ -4,8 +4,8 @@
 //
 //   node prices.mjs [model ids…]      (default: every model in the bench presets)
 //
-// "ZDR" is the price at the cheapest zero-data-retention endpoint, which is
-// what the hosted relay pays (it only routes to ZDR providers). Costs per
+// "ZDR" is the price at the cheapest zero-data-retention endpoint, the only
+// kind the bench routes to. Costs per
 // query use the README's request sizes and a typical answer length; models
 // that think before answering spend more output tokens than this assumes, so
 // prefer bench.mjs's measured numbers once you have them.

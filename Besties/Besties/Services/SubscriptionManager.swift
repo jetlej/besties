@@ -65,6 +65,11 @@ final class SubscriptionManager {
     /// the month's balance.
     static let monthlyCredit = 2.20
 
+    /// The unit shown to subscribers: 1 credit = $0.001 of model usage at
+    /// list prices, so the monthly credit is 2,200 credits.
+    static let creditUSD = 0.001
+    static let monthlyCredits = Int((monthlyCredit / creditUSD).rounded())
+
     static let recheckInterval: TimeInterval = 7 * 24 * 3600
 
     private static let apiBase = URL(string: "https://besties.gg/api")!

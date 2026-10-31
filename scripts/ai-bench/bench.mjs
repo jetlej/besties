@@ -88,7 +88,7 @@ async function complete(args, spec, system, prompt) {
     messages: [{ role: "system", content: system }, { role: "user", content: prompt }],
   };
   if (isOpenRouter(args.base)) {
-    // Same routing rule as the hosted relay: only providers that don't keep data.
+    // Zero data retention only: never route to a provider that keeps data.
     if (args.zdr) body.provider = { data_collection: "deny", zdr: true };
     if (effort) body.reasoning = effort === "none" ? { enabled: false } : { effort };
   } else if (effort) {

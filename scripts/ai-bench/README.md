@@ -35,7 +35,7 @@ forbidden claim. **Pass** = every fact, every check, no hallucination.
 # price table, no key needed
 node prices.mjs
 
-# hosted models through OpenRouter (same zero-data-retention routing as the relay)
+# hosted models through OpenRouter (zero-data-retention providers only)
 OPENROUTER_API_KEY=sk-or-… node bench.mjs --preset cheap --runs 3
 OPENROUTER_API_KEY=sk-or-… node bench.mjs --preset reference --runs 3 --judge anthropic/claude-opus-5.5
 OPENROUTER_API_KEY=sk-or-… node bench.mjs --preset local --runs 3     # open models that fit on a Mac
@@ -67,4 +67,4 @@ OPENROUTER_API_KEY=sk-or-… node bench.mjs --fixtures private/cases.json --pres
 `report.mjs` projects each model's measured output length (hidden reasoning
 tokens included) onto real request sizes: a busy month ≈ 20,000 input tokens
 (~1,000 messages), a hello ≈ 4,000 (the last 200 messages). `prices.mjs`
-uses the cheapest zero-data-retention endpoint, which is what the relay pays.
+uses the cheapest zero-data-retention endpoint.
