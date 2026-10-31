@@ -35,7 +35,7 @@ struct AIPaywallView: View {
                     Button {
                         NSWorkspace.shared.open(SubscriptionManager.subscribeURL)
                     } label: {
-                        Text("Subscribe — $10/mo")
+                        Text("Subscribe — $7/mo")
                             .font(.system(size: 16, weight: .heavy, design: .rounded))
                             .foregroundStyle(Color.ink)
                             .frame(maxWidth: 320)
@@ -43,7 +43,7 @@ struct AIPaywallView: View {
                             .background(Color.sun, in: RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
-                    Text("Includes $9 of AI credit every month. Cancel anytime.")
+                    Text("Or $69/year. AI credit every month. Cancel anytime.")
                         .font(.caption)
                         .foregroundStyle(Color.ink.opacity(0.5))
                 }
@@ -486,7 +486,7 @@ private struct AIAccountPopover: View {
 
 // MARK: - Meter
 
-/// "$X.XX of $9.00 left this month" — the minted key's credit, straight from
+/// "$X.XX of $2.20 left this month" — the minted key's credit, straight from
 /// OpenRouter. Absent for the dev key and for BYOK.
 struct AICreditMeter: View {
     private let subscription = SubscriptionManager.shared

@@ -4,6 +4,19 @@ struct SettingsView: View {
     @Bindable var appState: AppState
 
     var body: some View {
+        TabView {
+            GeneralSettingsView(appState: appState)
+                .tabItem { Label("General", systemImage: "gearshape") }
+            MCPSettingsView(mcp: appState.mcp)
+                .tabItem { Label("AI Apps", systemImage: "point.3.connected.trianglepath.dotted") }
+        }
+    }
+}
+
+private struct GeneralSettingsView: View {
+    @Bindable var appState: AppState
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if appState.whatsAppInstalled {
                 Toggle("Include WhatsApp messages", isOn: $appState.whatsAppEnabled)
