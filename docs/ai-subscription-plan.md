@@ -5,18 +5,23 @@
 ## Decisions (locked)
 
 - App becomes **free to download** (DMG goes public; the $15 one-time purchase retires).
-- The **AI tab is the premium feature**, gated behind a **$10/mo Stripe subscription**.
-- Subscribers get **$9/month of AI credit** (breakage model — most won't use it; heaviest users ≈ break-even after OpenRouter's ~5.5% credit fee + Stripe fees).
+- The **AI tab is the premium feature**: **$7/mo or $69/yr** Stripe subscription
+  (repriced 2026-10-31; was $10/mo).
+- Subscribers get **$2.20/month of AI credit** (2026-10-31; was $9). Rule: **$4 margin on
+  the $7 plan even at full use** — $7 − Stripe 3.6% + $0.30 − $2.20 × 1.055 (OpenRouter's
+  5.5% credit fee) = $4.13 ($4.02 on international cards). The yearly plan keeps the same
+  monthly credit; at full use it nets $3.20/mo (holding $4 would need $79/yr, only 6% off).
+  Yearly plans get months 2–12 of credit from a daily cron (`api/credit-topup.js`).
 - **Hard privacy promise**: our servers never see message content. The app talks
   **directly to OpenRouter** using a per-subscriber runtime key minted by our billing
   API with a $9 spend limit. Our infra only knows "this email has an active sub."
-- **Visible credit meter** in the app ("$X.XX of $9 left this month"), read straight
+- **Visible credit meter** in the app ("$X.XX of $2.20 left this month"; to be shown as credits), read straight
   from OpenRouter's key self-inspection endpoint — no server bookkeeping.
 - **BYOK** (own `sk-or-…` OpenRouter key) allowed as a subscriber-only perk, same code path.
 - **No trial** (re-confirmed 2026-10-08; the prototype's one-free-question gate is deleted) —
   non-subscribers see a paywall with canned example screenshots.
 - Sign-in: **email → 6-digit code** (no accounts, no passwords). Code emailed via Resend.
-- Existing 2 buyers: comped manually in Stripe (100%-off forever coupon on the sub). No compat code.
+- Existing buyers: comped manually in Stripe if at all. No compat code (re-confirmed 2026-10-31).
 
 ## Phase 1 — Backend: 4 Vercel functions next to `site/api/download.js` (~half day)
 

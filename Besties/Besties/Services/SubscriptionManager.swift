@@ -53,15 +53,17 @@ final class SubscriptionManager {
 
     static let shared = SubscriptionManager()
 
-    /// SUBSCRIBE_URL — PLACEHOLDER. Replace with the Stripe subscription
-    /// payment link once it exists (Phase 4); until then it opens the site.
-    static let subscribeURL = URL(string: "https://besties.gg")!
+    /// The site's plan picker (monthly $7 / yearly $69); its buttons start
+    /// Stripe Checkout through /api/subscribe.
+    static let subscribeURL = URL(string: "https://besties.gg/#ai")!
 
-    /// What the subscription buys each month, in USD. The meter's denominator
-    /// is this constant, not the key's OpenRouter `limit`: the webhook tops the
-    /// limit up to `usage + $9` every invoice, so `limit` grows forever while
-    /// `limit_remaining` is the month's balance.
-    static let monthlyCredit = 9.0
+    /// What the subscription buys each month, in USD of model usage. Must equal
+    /// MONTHLY_CREDIT in site/api/_lib/plan.js ($2.20 keeps a $4 margin on the
+    /// $7 plan at full use). The meter's denominator is this constant, not the
+    /// key's OpenRouter `limit`: each month's top-up sets the limit to
+    /// `usage + credit`, so `limit` grows forever while `limit_remaining` is
+    /// the month's balance.
+    static let monthlyCredit = 2.20
 
     static let recheckInterval: TimeInterval = 7 * 24 * 3600
 
@@ -333,7 +335,7 @@ final class SubscriptionManager {
     // MARK: - BYOK
 
     /// Swaps the subscriber's own OpenRouter key in for the minted one; every
-    /// AI request then bills their account instead of the $9 credit.
+    /// AI request then bills their account instead of the monthly credit.
     func setOwnKey(_ raw: String) throws {
         guard canUseOwnKey else { throw SignInError.noSubscription }
         let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)

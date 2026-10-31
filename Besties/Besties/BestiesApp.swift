@@ -225,6 +225,10 @@ final class AppState {
     var aiReportRequest: AIReportKind?
     @ObservationIgnored private var searchSyncStarted = false
 
+    /// Optional MCP server for AI apps on this Mac. Off until turned on.
+    /// (Its own SearchIndex handle: it's only a path; each search opens the file.)
+    let mcp = MCPController(searchIndex: SearchIndex())
+
     private let messageStore = MessageStore()
     private let whatsAppStore = WhatsAppStore()
     private let analyzer = ConversationAnalyzer()
@@ -240,7 +244,7 @@ final class AppState {
     /// combined row, so dormancy reflects the last contact on *any* platform
     /// and nobody shows up twice in Reconnect. The busiest conversation keeps
     /// the row's handle/source for the message button.
-    private static func mergedByPerson(_ conversations: [Conversation]) -> [Conversation] {
+    static func mergedByPerson(_ conversations: [Conversation]) -> [Conversation] {
         var groups: [String: [Conversation]] = [:]
         for c in conversations { groups[c.mergeKey, default: []].append(c) }
         return groups.values.map { group in
@@ -336,6 +340,7 @@ final class AppState {
                     uniquingKeysWith: { first, _ in first }
                 )
             }.value
+            self.mcp.library.update(conversations: self.resolvedConversations, chatInfoByID: self.chatInfoByID)
             let counted = await Task.detached { index.indexedCount() }.value
             self.searchIndexedCount = counted
             _ = await Task.detached {
@@ -470,6 +475,7 @@ final class AppState {
                     uniquingKeysWith: { first, _ in first }
                 )
                 self.isLoading = false
+                self.mcp.library.update(conversations: resolved, chatInfoByID: self.chatInfoByID)
                 self.startSearchSync()
             case .failure(let error):
                 self.error = error.localizedDescription
