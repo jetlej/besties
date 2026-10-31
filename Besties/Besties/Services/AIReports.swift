@@ -94,6 +94,9 @@ final class AIReportEngine {
                           extraTools: [Self.renderReportTool],
                           terminalTool: Self.renderReportName,
                           maxToolRounds: Self.maxToolRounds))
+        // Reports run on the default model — or the ChatGPT plan's stand-in
+        // when the key can't reach it.
+        loop.model = AIModel.fallback(withKey: apiKey)
         loop.messages = [[
             "role": "user",
             "content": [["type": "text", "text": AIReportPrompt.request(for: kind)]],

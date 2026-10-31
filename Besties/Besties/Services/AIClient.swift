@@ -13,7 +13,9 @@ struct AIUsage {
 
 /// The models the chat can switch between, per question. Claude runs on
 /// Anthropic's API or OpenRouter; everything else is OpenRouter-only, reached
-/// through the same Anthropic-format `/messages` endpoint.
+/// through the same Anthropic-format `/messages` endpoint — except on the
+/// ChatGPT plan, which reaches only the OpenAI family through the Responses
+/// API (`AIBackend.openAIResponses`).
 enum AIModel: String, CaseIterable, Identifiable {
     // Raw values are persisted (defaults + saved chats) — never rename them.
     case opus, sonnet, haiku
@@ -25,6 +27,13 @@ enum AIModel: String, CaseIterable, Identifiable {
     // would burn the $2.20 monthly credit in ~25 report-sized answers.
     static let `default` = AIModel.haiku
     private static let defaultsKey = "aiModel"
+
+    /// What a run falls back to when the wanted model isn't available on the
+    /// active key: the regular default, or — on the ChatGPT plan, which can't
+    /// reach Claude — OpenAI's balanced pick.
+    static func fallback(withKey key: String?) -> AIModel {
+        AIModel.default.isAvailable(withKey: key) ? .default : .gptSol
+    }
 
     /// The chat's pick, remembered across launches.
     static var selected: AIModel {
@@ -84,6 +93,9 @@ enum AIModel: String, CaseIterable, Identifiable {
         case (_, .anthropic) where family == .claude: return "claude-\(rawValue)-5-5"
         case (_, .openRouter) where family == .claude: return "anthropic/claude-\(rawValue)-5.5"
         case (_, .anthropic): return nil
+        // The ChatGPT plan runs only OpenAI's own models, by their plain ids.
+        case (_, .openAIResponses) where family == .openAI: return rawValue
+        case (_, .openAIResponses): return nil
         case (.gptAstra, _), (.gptSol, _), (.gptTerra, _), (.gptLuna, _): return "openai/\(rawValue)"
         case (.gemini, _): return "google/\(rawValue)"
         case (.grok, _): return "x-ai/\(rawValue)"
@@ -93,7 +105,8 @@ enum AIModel: String, CaseIterable, Identifiable {
     }
 
     /// Whether this key can reach the model: only OpenRouter keys (BYOK
-    /// `sk-or-…` or the subscription's) go beyond Claude.
+    /// `sk-or-…` or the subscription's) go beyond Claude, and the ChatGPT
+    /// plan reaches only the OpenAI family.
     func isAvailable(withKey key: String?) -> Bool {
         guard let key else { return false }
         return apiID(for: AIBackend(apiKey: key)) != nil
@@ -335,6 +348,12 @@ final class AIToolLoop {
     }
 
     private func streamTurn(onEvent: @escaping (AIStreamEvent) -> Void) async throws -> Turn {
+        // The ChatGPT plan speaks a different wire format entirely; everything
+        // around the transport is shared.
+        if backend == .openAIResponses {
+            return try await streamResponsesTurn(onEvent: onEvent)
+        }
+
         // Moving cache breakpoint on the last content block: each round then
         // re-reads the whole prior conversation at the cached rate instead of
         // full input price — on long tool loops that is most of the bill.
@@ -372,6 +391,8 @@ final class AIToolLoop {
         case .openRouter:
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "authorization")
             body["session_id"] = sessionID
+        case .openAIResponses:
+            break   // never here — streamResponsesTurn handles it above
         }
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -484,6 +505,199 @@ final class AIToolLoop {
                 break
             }
             return out
+        }
+    }
+
+    // MARK: - One request (OpenAI Responses)
+
+    /// The ChatGPT-plan request: same loop, same stored history, different
+    /// wire format. The history stays in the Anthropic block shape and is
+    /// translated to Responses `input` items per request (`responsesInput`);
+    /// the reply is translated back into the same shape, so persistence,
+    /// rollback, model switches and the terminal tool all work unchanged.
+    /// The subscription endpoint requires store:false + stream:true and
+    /// rejects some sampling params, so the body carries only what's needed —
+    /// and there is no cache_control on this path.
+    private func streamResponsesTurn(onEvent: @escaping (AIStreamEvent) -> Void) async throws -> Turn {
+        // The plan's bearer token, refreshed by ChatGPTAuth when stale.
+        let token = try await ChatGPTAuth.shared.validAccessToken()
+
+        var body: [String: Any] = [
+            "model": model.apiID(for: .openAIResponses) ?? AIModel.fallback(withKey: ChatGPTAuth.planKey).rawValue,
+            "instructions": config.systemPrompt,
+            "input": Self.responsesInput(Self.forModel(model, messages)),
+            "stream": true,
+            "store": false,
+        ]
+        let tools = toolbox.toolDefinitions + config.extraTools
+        if !tools.isEmpty {
+            // Same schemas, Responses envelope: flat function entries instead
+            // of Anthropic's name/input_schema shape.
+            body["tools"] = tools.map { definition -> [String: Any] in
+                [
+                    "type": "function",
+                    "name": definition["name"] ?? "",
+                    "description": definition["description"] ?? "",
+                    "parameters": definition["input_schema"] ?? [:],
+                ]
+            }
+        }
+
+        var request = URLRequest(url: backend.endpoint)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (stream, response) = try await URLSession.shared.bytes(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            let error = try await Self.errorBody(from: stream)
+            throw Self.responsesError(code: error?["code"] as? String,
+                                      message: error?["message"] as? String,
+                                      status: http.statusCode)
+        }
+
+        var turn = Turn()
+        var completed = false
+
+        for try await line in stream.lines {
+            guard line.hasPrefix("data:") else { continue }
+            let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            guard let data = payload.data(using: .utf8),
+                  let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = event["type"] as? String else { continue }
+
+            switch type {
+            case "response.output_text.delta":
+                if let chunk = event["delta"] as? String, !chunk.isEmpty {
+                    onEvent(.textDelta(chunk))
+                }
+
+            // A finished output item carries its complete content, so the text
+            // deltas above are display-only and the argument deltas are skipped
+            // entirely: the turn is built from these, translated back into the
+            // loop's Anthropic block shape (tool_use.id carries the call_id).
+            case "response.output_item.done":
+                guard let item = event["item"] as? [String: Any] else { continue }
+                switch item["type"] as? String {
+                case "message":
+                    let text = ((item["content"] as? [[String: Any]]) ?? [])
+                        .filter { $0["type"] as? String == "output_text" }
+                        .compactMap { $0["text"] as? String }
+                        .joined()
+                    if !text.isEmpty { turn.content.append(["type": "text", "text": text]) }
+                case "function_call":
+                    guard let callID = item["call_id"] as? String,
+                          let name = item["name"] as? String else { continue }
+                    let arguments = Data(((item["arguments"] as? String) ?? "").utf8)
+                    let input = (try? JSONSerialization.jsonObject(with: arguments)) as? [String: Any] ?? [:]
+                    turn.content.append(["type": "tool_use", "id": callID, "name": name, "input": input])
+                    turn.toolCalls.append(ToolCall(id: callID, name: name, input: input))
+                default:
+                    break   // reasoning summaries and anything newer — nothing to keep
+                }
+
+            case "response.completed":
+                completed = true
+                if let finished = event["response"] as? [String: Any] {
+                    Self.absorbResponsesUsage(finished["usage"] as? [String: Any], into: &turn.usage)
+                }
+
+            // Usage-limit failures arrive mid-stream this way, not as HTTP errors.
+            case "response.failed":
+                let error = (event["response"] as? [String: Any])?["error"] as? [String: Any]
+                throw Self.responsesError(code: error?["code"] as? String,
+                                          message: error?["message"] as? String, status: 200)
+
+            case "response.incomplete":
+                let details = (event["response"] as? [String: Any])?["incomplete_details"] as? [String: Any]
+                let reason = details?["reason"] as? String
+                throw AIClientError.api(reason == "max_output_tokens"
+                    ? "The answer was cut off — it hit the length limit. Ask for a narrower slice and it'll fit."
+                    : "The answer didn't finish\(reason.map { " (\($0))" } ?? ""). Try again.")
+
+            case "error":
+                let detail = event["message"] as? String
+                    ?? (event["error"] as? [String: Any])?["message"] as? String
+                throw Self.responsesError(code: event["code"] as? String, message: detail, status: 200)
+
+            default:
+                break
+            }
+        }
+
+        // A run only counts on response.completed; a stream that just stops is
+        // an interrupted answer, not an end_turn.
+        guard completed else { throw AIClientError.api("The connection dropped mid-answer. Try again.") }
+        turn.stopReason = turn.toolCalls.isEmpty ? "end_turn" : "tool_use"
+        return turn
+    }
+
+    /// The Anthropic-shaped history as Responses `input` items. Text blocks
+    /// become message items (input_text for the user side, output_text for the
+    /// assistant's), tool_use becomes a function_call keyed by call_id,
+    /// tool_result becomes a function_call_output with the matching call_id.
+    /// Thinking blocks never make it here (`forModel` strips them for the
+    /// non-Claude side).
+    private static func responsesInput(_ messages: [[String: Any]]) -> [[String: Any]] {
+        var items: [[String: Any]] = []
+        for message in messages {
+            let role = message["role"] as? String ?? "user"
+            guard let content = message["content"] as? [[String: Any]] else { continue }
+            for block in content {
+                switch block["type"] as? String {
+                case "text":
+                    let kind = role == "assistant" ? "output_text" : "input_text"
+                    items.append(["type": "message", "role": role,
+                                  "content": [["type": kind, "text": block["text"] as? String ?? ""]]])
+                case "tool_use":
+                    let input = block["input"] as? [String: Any] ?? [:]
+                    let data = (try? JSONSerialization.data(withJSONObject: input)) ?? Data()
+                    items.append(["type": "function_call",
+                                  "call_id": block["id"] as? String ?? "",
+                                  "name": block["name"] as? String ?? "",
+                                  "arguments": String(data: data, encoding: .utf8) ?? "{}"])
+                case "tool_result":
+                    items.append(["type": "function_call_output",
+                                  "call_id": block["tool_use_id"] as? String ?? "",
+                                  "output": block["content"] as? String ?? ""])
+                default:
+                    break
+                }
+            }
+        }
+        return items
+    }
+
+    /// Responses usage folds cache reads into `input_tokens`; split them back
+    /// out so `AIUsage` keeps the Messages API's non-overlapping counters.
+    private static func absorbResponsesUsage(_ usage: [String: Any]?, into turn: inout AIUsage) {
+        guard let usage else { return }
+        let cached = ((usage["input_tokens_details"] as? [String: Any])?["cached_tokens"] as? Int) ?? 0
+        if let input = usage["input_tokens"] as? Int {
+            turn.inputTokens = max(0, input - cached)
+            turn.cacheReadTokens = cached
+        }
+        if let output = usage["output_tokens"] as? Int { turn.outputTokens = output }
+    }
+
+    /// ChatGPT-plan failures, friendliest where OpenAI names the cause.
+    private static func responsesError(code: String?, message: String?, status: Int) -> AIClientError {
+        switch code {
+        case "subscription_sharing_usage_limit_exceeded":
+            return .api("You've hit your ChatGPT plan limit for now. It resets on its own — try again later.")
+        case "subscription_sharing_usage_unavailable":
+            return .api("Your ChatGPT plan can't run requests right now. Check the plan on your account, or try again later.")
+        default:
+            break
+        }
+        let detail = message.map { ": \($0)" } ?? ""
+        switch status {
+        case 401, 403: return .api("ChatGPT rejected the sign-in\(detail). Sign out and back in from the account menu.")
+        case 429: return .api("Rate limited — wait a moment and try again\(detail).")
+        case 500...599: return .api("OpenAI is having trouble (\(status))\(detail).")
+        case 200: return .api(message ?? "The request failed.")
+        default: return .api("The request failed (\(status))\(detail).")
         }
     }
 
@@ -666,23 +880,33 @@ final class AIChatSession {
     }
 }
 
-/// Where requests go, picked by key prefix. An OpenRouter key (`sk-or-…`)
-/// goes to OpenRouter's Anthropic-compatible `/messages` endpoint; anything
-/// else (`sk-ant-…`) goes to Anthropic directly. The wire format is the same
-/// Messages API either way — body, cache_control breakpoints, SSE events,
-/// usage fields — so only the URL, auth header and model slug differ.
+/// Where requests go, picked by the "key". An OpenRouter key (`sk-or-…`)
+/// goes to OpenRouter's Anthropic-compatible `/messages` endpoint; the
+/// ChatGPT-plan sentinel (`ChatGPTAuth.planKey` — not a credential, the real
+/// token comes from `ChatGPTAuth` per request) goes to OpenAI's Responses
+/// API; anything else (`sk-ant-…`) goes to Anthropic directly. The first two
+/// Messages-API backends share a wire format — body, cache_control
+/// breakpoints, SSE events, usage fields — so only the URL, auth header and
+/// model slug differ; the Responses backend has its own request/stream path
+/// (`streamResponsesTurn`).
 private enum AIBackend {
     case anthropic
     case openRouter
+    case openAIResponses
 
     init(apiKey: String) {
-        self = apiKey.hasPrefix("sk-or-") ? .openRouter : .anthropic
+        if apiKey == ChatGPTAuth.planKey {
+            self = .openAIResponses
+        } else {
+            self = apiKey.hasPrefix("sk-or-") ? .openRouter : .anthropic
+        }
     }
 
     var endpoint: URL {
         switch self {
         case .anthropic: return URL(string: "https://api.anthropic.com/v1/messages")!
         case .openRouter: return URL(string: "https://openrouter.ai/api/v1/messages")!
+        case .openAIResponses: return URL(string: "https://api.openai.com/v1/responses")!
         }
     }
 
@@ -690,6 +914,7 @@ private enum AIBackend {
         switch self {
         case .anthropic: return "Anthropic's API"
         case .openRouter: return "OpenRouter"
+        case .openAIResponses: return "OpenAI"
         }
     }
 }

@@ -7,8 +7,11 @@ import SwiftUI
 /// chat (fictional people and numbers), then the one thing to do about it.
 struct AIPaywallView: View {
     private let subscription = SubscriptionManager.shared
+    private let chatGPT = ChatGPTAuth.shared
     @State private var showSignIn = false
-    @State private var notice: SubscriptionManager.SignInError?
+    /// Whatever the last action wants kept on screen — a sign-in error, a
+    /// ChatGPT sign-in failure.
+    @State private var notice: String?
     @State private var checking = false
 
     /// "anything" gets the site's sun-highlight treatment, as in the chat.
@@ -50,8 +53,10 @@ struct AIPaywallView: View {
 
                 secondaryAction
 
+                chatGPTAction
+
                 // Reserved so a message appearing never moves the layout.
-                Text(notice?.message ?? " ")
+                Text(notice ?? " ")
                     .font(.callout.weight(.medium))
                     .foregroundStyle(Color.orange)
                     .multilineTextAlignment(.center)
@@ -63,7 +68,36 @@ struct AIPaywallView: View {
             .frame(maxWidth: .infinity)
         }
         .sheet(isPresented: $showSignIn) {
-            AISignInSheet { error in notice = error }
+            AISignInSheet { error in notice = error?.message }
+        }
+    }
+
+    /// The third way in: sign in with a ChatGPT account and run the AI on its
+    /// Plus/Pro plan. On success the manager's state flips to active and this
+    /// whole paywall disappears.
+    @ViewBuilder
+    private var chatGPTAction: some View {
+        if chatGPT.state == .signingIn {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Waiting for ChatGPT — finish signing in in your browser…")
+            }
+            .font(.callout)
+            .foregroundStyle(Color.ink.opacity(0.55))
+        } else {
+            linkButton("Use your ChatGPT plan") {
+                notice = nil
+                Task {
+                    do {
+                        try await chatGPT.signIn()
+                    } catch let error as ChatGPTAuth.AuthError {
+                        notice = error.message
+                    } catch {
+                        notice = error.localizedDescription
+                    }
+                }
+            }
         }
     }
 
@@ -84,7 +118,7 @@ struct AIPaywallView: View {
                         checking = true
                         notice = nil
                         do { try await subscription.checkAgain() } catch let error as SubscriptionManager.SignInError {
-                            notice = error
+                            notice = error.message
                         } catch {}
                         checking = false
                     }
@@ -391,8 +425,7 @@ struct AIAccountButton: View {
         Button {
             showing = true
         } label: {
-            Label(subscription.isDevKey ? "Dev key" : (subscription.email ?? "Account"),
-                  systemImage: "person.crop.circle")
+            Label(label, systemImage: "person.crop.circle")
                 .font(.caption)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -404,6 +437,12 @@ struct AIAccountButton: View {
         .popover(isPresented: $showing, arrowEdge: .trailing) {
             AIAccountPopover()
         }
+    }
+
+    private var label: String {
+        if subscription.isDevKey { return "Dev key" }
+        if subscription.usesChatGPTPlan { return ChatGPTAuth.shared.email ?? "ChatGPT plan" }
+        return subscription.email ?? "Account"
     }
 }
 
@@ -423,6 +462,20 @@ private struct AIAccountPopover: View {
                     .font(.callout)
                     .foregroundStyle(Color.ink.opacity(0.6))
                     .fixedSize(horizontal: false, vertical: true)
+            } else if subscription.usesChatGPTPlan {
+                Text("Using your ChatGPT plan — \(ChatGPTAuth.shared.email ?? "signed in")")
+                    .font(.callout)
+                    .foregroundStyle(Color.ink.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("GPT models only. Usage counts against your ChatGPT plan, not Besties credits.")
+                    .font(.caption)
+                    .foregroundStyle(Color.ink.opacity(0.45))
+                    .fixedSize(horizontal: false, vertical: true)
+                Divider()
+                Button("Sign out") { ChatGPTAuth.shared.signOut() }
+                    .buttonStyle(.plain)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(Color.orange)
             } else {
                 Text("Signed in as \(subscription.email ?? "you")")
                     .font(.callout)
@@ -447,11 +500,11 @@ private struct AIAccountPopover: View {
     @ViewBuilder
     private var ownKeySection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Your own OpenRouter key")
+            Text("Your own API key")
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(Color.ink)
             if subscription.usesOwnKey {
-                Text("In use — AI bills your OpenRouter account instead of your monthly credit.")
+                Text("In use — AI bills your own account instead of your monthly credit.")
                     .font(.caption)
                     .foregroundStyle(Color.ink.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
@@ -459,7 +512,7 @@ private struct AIAccountPopover: View {
                     .controlSize(.small)
             } else {
                 HStack(spacing: 6) {
-                    SecureField("sk-or-…", text: $keyDraft)
+                    SecureField("sk-or-… or sk-ant-…", text: $keyDraft)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit(save)
                     Button("Use", action: save)

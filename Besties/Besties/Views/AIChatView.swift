@@ -193,9 +193,11 @@ private final class AIChatModel {
             isRunning = true
             turnStartedAt = .now
             turnToolCalls = 0
-            // A non-Claude pick on an Anthropic key (the key can change under
-            // a chat) answers on the default rather than failing.
-            let model = model.isAvailable(withKey: SubscriptionManager.shared.activeKey) ? model : .default
+            // A pick the key can't reach (the key can change under a chat)
+            // answers on the fallback rather than failing — the default, or
+            // the ChatGPT plan's stand-in.
+            let key = SubscriptionManager.shared.activeKey
+            let model = model.isAvailable(withKey: key) ? model : .fallback(withKey: key)
             await session.ask(question, model: model) { [weak self] event in
                 self?.handle(event)
             }
@@ -469,15 +471,20 @@ struct AIChatView: View {
         let usage = item.usage
         let tokens = "\(usage.inputTokens.formatted()) in · \(usage.outputTokens.formatted()) out · \(usage.cacheReadTokens.formatted()) cached · \(usage.cacheCreationTokens.formatted()) written"
         // Subscribers think in credits (the meter's unit); BYOK and the dev
-        // key pay real dollars.
-        let cost = SubscriptionManager.shared.showsMeter
-            ? "~\(max(1, Int((usage.costUSD / SubscriptionManager.creditUSD).rounded()))) credits"
-            : String(format: "$%.4f", usage.costUSD)
+        // key pay real dollars; the ChatGPT plan isn't billed per token, so
+        // it shows no cost at all.
+        let cost: String? = if SubscriptionManager.shared.usesChatGPTPlan {
+            nil
+        } else if SubscriptionManager.shared.showsMeter {
+            "~\(max(1, Int((usage.costUSD / SubscriptionManager.creditUSD).rounded()))) credits"
+        } else {
+            String(format: "$%.4f", usage.costUSD)
+        }
         let stop = item.stopReason == "end_turn" ? "" : " · \(item.stopReason)"
         let answer = model.answer(endingAt: item.id)
         return HStack(spacing: 10) {
             if !answer.isEmpty { CopyAnswerButton(text: answer) }
-            Text("\(usage.model.label) · \(tokens) · \(cost)\(stop)")
+            Text("\(usage.model.label) · \(tokens)\(cost.map { " · \($0)" } ?? "")\(stop)")
                 .font(.caption2.monospaced())
                 .foregroundStyle(Color.ink.opacity(0.35))
         }
@@ -661,7 +668,10 @@ extension AIChatView {
                         Button {
                             model.model = option
                         } label: {
-                            let line = "\(option.label) — \(option.blurb) · ~\(option.creditsPerAnswer) credit\(option.creditsPerAnswer == 1 ? "" : "s")/answer"
+                            // Plan usage has no credit price, so the suffix goes.
+                            let line = subscription.usesChatGPTPlan
+                                ? "\(option.label) — \(option.blurb)"
+                                : "\(option.label) — \(option.blurb) · ~\(option.creditsPerAnswer) credit\(option.creditsPerAnswer == 1 ? "" : "s")/answer"
                             if option == model.model {
                                 Label(line, systemImage: "checkmark")
                             } else {
@@ -672,7 +682,10 @@ extension AIChatView {
                     }
                 }
             }
-            if !AIModel.gptSol.isAvailable(withKey: key) {
+            if subscription.usesChatGPTPlan {
+                Divider()
+                Text("Claude and other models need Besties AI or an OpenRouter key")
+            } else if !AIModel.gptSol.isAvailable(withKey: key) {
                 Divider()
                 Text("GPT and other non-Claude models need Besties AI or an OpenRouter key")
             }

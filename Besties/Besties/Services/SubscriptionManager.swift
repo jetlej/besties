@@ -3,9 +3,11 @@ import Observation
 import os
 import Security
 
-/// Who gets the AI tab, and with which OpenRouter key — Phase 3 of
+/// Who gets the AI tab, and with which key — Phase 3 of
 /// docs/ai-subscription-plan.md. There is no free trial: without an active
-/// key the AI tab is a paywall.
+/// access source the AI tab is a paywall. Besides the subscription (and its
+/// BYOK perk) there is the ChatGPT plan: `ChatGPTAuth`'s sign-in, folded into
+/// the precedence in `resolveState` via the `planKey` sentinel.
 ///
 /// The billing API (site/api) only ever learns "this email has an active
 /// subscription": sign-in is email → 6-digit code (`auth-request` /
@@ -42,7 +44,7 @@ final class SubscriptionManager {
             case .noSubscription: "No active subscription for that email."
             case .signedOut: "Your sign-in expired. Sign in again."
             case .keyUnavailable: "You're signed in, but Besties AI didn't load. Try again in a minute."
-            case .invalidKey: "OpenRouter keys start with sk-or-."
+            case .invalidKey: "Keys start with sk-or- (OpenRouter) or sk-ant- (Anthropic)."
             case .offline: "Couldn't reach Besties. Check your internet connection."
             case .server: "Something went wrong on our end. Try again in a minute."
             }
@@ -109,6 +111,8 @@ final class SubscriptionManager {
     private let defaults: UserDefaults
     private let transport: Transport
     private let now: () -> Date
+    /// The ChatGPT-plan sign-in; its state changes re-run `resolveState`.
+    private let chatGPT = ChatGPTAuth.shared
 
     private var token: String?
     private var mintedKey: String?
@@ -133,7 +137,11 @@ final class SubscriptionManager {
     var canUseOwnKey: Bool { !isDevKey && mintedKey != nil }
     var usesOwnKey: Bool { canUseOwnKey && ownKey != nil }
 
-    var showsMeter: Bool { !isDevKey && !usesOwnKey && isActive && creditRemaining != nil }
+    /// ChatGPT plan is the active source — the AI runs on the user's own
+    /// ChatGPT Plus/Pro plan through the Responses API.
+    var usesChatGPTPlan: Bool { activeKey == ChatGPTAuth.planKey }
+
+    var showsMeter: Bool { !isDevKey && !usesOwnKey && !usesChatGPTPlan && isActive && creditRemaining != nil }
 
     init(keychain: KeychainStore = KeychainStore(service: "com.besties.app"),
          defaults: UserDefaults = .standard,
@@ -149,6 +157,7 @@ final class SubscriptionManager {
         mintedKey = keychain.read(Item.mintedKey)
         ownKey = keychain.read(Item.ownKey)
         email = defaults.string(forKey: Default.email)
+        chatGPT.onChange = { [weak self] in self?.resolveState() }
         resolveState()
     }
 
@@ -159,14 +168,24 @@ final class SubscriptionManager {
         let dev = UserDefaults.standard.string(forKey: Default.devKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let keychain = KeychainStore(service: "com.besties.app")
-        return !dev.isEmpty || (keychain.read(Item.token) != nil && keychain.read(Item.mintedKey) != nil)
+        return !dev.isEmpty
+            || (keychain.read(Item.token) != nil && keychain.read(Item.mintedKey) != nil)
+            || keychain.read(ChatGPTAuth.keychainAccount) != nil
     }
 
+    /// Access precedence: dev key > the subscriber's own OpenRouter/Anthropic
+    /// key (BYOK) > ChatGPT plan > the subscription's minted key. BYOK only
+    /// exists on an active subscription; anyone holding both a ChatGPT sign-in
+    /// and a subscription can sign out of either in the account popover.
     private func resolveState() {
         if isDevKey {
             state = .active(key: devKey)
+        } else if token != nil, mintedKey != nil, let ownKey {
+            state = .active(key: ownKey)
+        } else if chatGPT.isSignedIn {
+            state = .active(key: ChatGPTAuth.planKey)
         } else if token != nil, let mintedKey {
-            state = .active(key: ownKey ?? mintedKey)
+            state = .active(key: mintedKey)
         } else if let pendingEmail {
             state = .needsSignIn(email: pendingEmail)
         } else {
@@ -339,12 +358,13 @@ final class SubscriptionManager {
 
     // MARK: - BYOK
 
-    /// Swaps the subscriber's own OpenRouter key in for the minted one; every
-    /// AI request then bills their account instead of the monthly credit.
+    /// Swaps the subscriber's own key in for the minted one; every AI request
+    /// then bills their account instead of the monthly credit. OpenRouter
+    /// (`sk-or-…`) or Anthropic (`sk-ant-…`) — `AIBackend` routes by prefix.
     func setOwnKey(_ raw: String) throws {
         guard canUseOwnKey else { throw SignInError.noSubscription }
         let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard key.hasPrefix("sk-or-"), key.count > 10 else { throw SignInError.invalidKey }
+        guard key.hasPrefix("sk-or-") || key.hasPrefix("sk-ant-"), key.count > 10 else { throw SignInError.invalidKey }
         keychain.write(key, for: Item.ownKey)
         ownKey = key
         resolveState()

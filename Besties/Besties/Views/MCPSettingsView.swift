@@ -1,55 +1,107 @@
 import SwiftUI
 import AppKit
 
-/// Settings → AI Apps: turn on the MCP server and copy the setup for an app.
+/// Settings → AI Apps: turn on the MCP server, then pick your AI app and
+/// copy its one setup snippet.
 struct MCPSettingsView: View {
     @Bindable var mcp: MCPController
+    @State private var app = ClientApp.lmStudio
     @State private var showToken = false
-    @State private var copied: String?
+    @State private var copied = false
     @State private var portDraft = ""
 
+    /// The apps we can hand a ready-made config. One is shown at a time.
+    enum ClientApp: String, CaseIterable {
+        case lmStudio = "LM Studio"
+        case cursor = "Cursor"
+        case claudeDesktop = "Claude Desktop"
+        case other = "Other"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Use \(appName) from AI apps")
-                    .font(.headline)
-                Text("Lets an AI app on this Mac read your messages through MCP, so you can ask anything: “when did Sam mention Denver?”, “what did Mia and I do in 2021?”. Pair it with a local model (LM Studio, Ollama) and nothing ever leaves your Mac.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text("Use Besties from AI apps")
+                    .font(.system(size: 17, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Color.ink)
+                Text("Lets an AI app on this Mac read your messages, so you can ask anything: “when did Sam mention Denver?”. Pair it with a local model and nothing ever leaves your Mac.")
+                    .settingsCaption()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            SettingsCard {
+                HStack {
+                    Text("Allow AI apps on this Mac to connect")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(Color.ink)
+                    Spacer()
+                    Toggle("Allow AI apps on this Mac to connect", isOn: $mcp.enabled)
+                        .toggleStyle(.switch)
+                        .tint(Color.brandBlue)
+                        .labelsHidden()
+                }
+                statusLine
             }
 
-            Toggle("Allow AI apps on this Mac to connect", isOn: $mcp.enabled)
-                .toggleStyle(.switch)
-            statusLine
-
             if mcp.enabled {
-                Divider()
-                tokenRow
-                setup(title: "LM Studio, Cursor, and other apps that take a URL",
-                      note: "In LM Studio: Program → Install → Edit mcp.json, paste, save.",
-                      snippet: urlConfig)
-                setup(title: "Claude Desktop and other apps that only run commands",
-                      note: "Needs Node.js. Claude Desktop sends what it reads to Anthropic. For full privacy use a local model.",
-                      snippet: commandConfig)
+                SettingsCard(title: "Set up your app") {
+                    Picker("", selection: $app) {
+                        ForEach(ClientApp.allCases, id: \.self) { Text($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    Text(note)
+                        .settingsCaption()
+
+                    snippetBox
+
+                    HStack {
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(snippet, forType: .string)
+                            copied = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+                        } label: {
+                            Text(copied ? "Copied ✓" : "Copy for \(app.rawValue)")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.ink)
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 14)
+                                .background(Color.sun, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
+                        Button(showToken ? "Hide token" : "Show token") { showToken.toggle() }
+                            .buttonStyle(.plain)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.brandBlue)
+                        Button("New token") { mcp.resetToken() }
+                            .buttonStyle(.plain)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.brandBlue)
+                            .help("Apps using the old token stop working until you update them.")
+                    }
+                }
+
                 HStack {
                     Text("Port")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.ink.opacity(0.55))
                     TextField("Port", text: $portDraft, prompt: Text(String(MCPController.defaultPort)))
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
+                        .frame(width: 76)
                         .onSubmit(applyPort)
                     Spacer()
                 }
-                .font(.callout)
             }
 
-            Text("Read-only. Only apps on this Mac that have the token can connect, and only while \(appName) is open. Turn this off, or make a new token, to cut every app off.")
+            Text("Read-only. Only apps on this Mac with the token can connect, and only while Besties is open. Turn this off, or make a new token, to cut every app off.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.ink.opacity(0.45))
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(20)
-        .frame(width: 480, alignment: .leading)
         .onAppear {
             portDraft = mcp.port == MCPController.defaultPort ? "" : String(mcp.port)
             if mcp.enabled { mcp.loadToken() }
@@ -64,7 +116,7 @@ struct MCPSettingsView: View {
             EmptyView()
         case .starting:
             Label("Starting…", systemImage: "hourglass")
-                .font(.callout).foregroundStyle(.secondary)
+                .font(.callout).foregroundStyle(Color.ink.opacity(0.55))
         case .running:
             Label("Running at \(mcp.endpoint)", systemImage: "checkmark.circle.fill")
                 .font(.callout).foregroundStyle(.green)
@@ -76,46 +128,28 @@ struct MCPSettingsView: View {
         }
     }
 
-    private var tokenRow: some View {
-        HStack {
-            Text("Token")
-            Text(showToken ? mcp.token : String(repeating: "•", count: 16))
-                .font(.system(.callout, design: .monospaced))
-                .textSelection(.enabled)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer()
-            Button(showToken ? "Hide" : "Show") { showToken.toggle() }
-            Button("New token") { mcp.resetToken() }
-                .help("Apps using the old token stop working until you update them.")
-        }
-        .controlSize(.small)
+    private var snippetBox: some View {
+        Text(snippet.replacingOccurrences(of: mcp.token, with: showToken ? mcp.token : "•••your token•••"))
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(Color.ink.opacity(0.8))
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.bubbleTan, in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private func setup(title: String, note: String, snippet: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title).font(.callout.weight(.semibold))
-                Spacer()
-                Button(copied == title ? "Copied" : "Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(snippet, forType: .string)
-                    copied = title
-                }
-                .controlSize(.small)
-            }
-            Text(snippet.replacingOccurrences(of: mcp.token, with: showToken ? mcp.token : "…"))
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.bubbleTan, in: RoundedRectangle(cornerRadius: 8))
-            Text(note)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+    /// Where to paste the snippet, per app. One line each.
+    private var note: String {
+        switch app {
+        case .lmStudio: return "Program → Install → Edit mcp.json, paste, save. Best with a local model: fully private."
+        case .cursor: return "Settings → MCP → Add new server, paste, save."
+        case .claudeDesktop: return "Settings → Developer → Edit Config, paste, save. Needs Node.js, and Claude sends what it reads to Anthropic."
+        case .other: return "Any MCP app that takes a URL works. Command-only apps: use the Claude Desktop snippet."
         }
     }
+
+    private var snippet: String { app == .claudeDesktop ? commandConfig : urlConfig }
 
     private var serverName: String { appName.lowercased().replacingOccurrences(of: " ", with: "-") }
 
