@@ -24,7 +24,7 @@ enum AIModel: String, CaseIterable, Identifiable {
 
     // The bench's decision rule (scripts/ai-bench/RESULTS.md) picks the
     // default; Haiku is its fallback until the hosted run happens. Opus here
-    // would burn the $2.20 monthly credit in ~25 report-sized answers.
+    // would burn the $3 monthly credit in ~35 report-sized answers.
     static let `default` = AIModel.haiku
     private static let defaultsKey = "aiModel"
 

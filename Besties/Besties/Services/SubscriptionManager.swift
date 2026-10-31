@@ -60,15 +60,15 @@ final class SubscriptionManager {
     static let subscribeURL = URL(string: "https://besties.gg/#ai")!
 
     /// What the subscription buys each month, in USD of model usage. Must equal
-    /// MONTHLY_CREDIT in site/api/_lib/plan.js ($2.20 keeps a $4 margin on the
+    /// MONTHLY_CREDIT in site/api/_lib/plan.js ($3 keeps a ~$3.29 margin on the
     /// $7 plan at full use). The meter's denominator is this constant, not the
     /// key's OpenRouter `limit`: each month's top-up sets the limit to
     /// `usage + credit`, so `limit` grows forever while `limit_remaining` is
     /// the month's balance.
-    static let monthlyCredit = 2.20
+    static let monthlyCredit = 3.0
 
     /// The unit shown to subscribers: 1 credit = $0.001 of model usage at
-    /// list prices, so the monthly credit is 2,200 credits.
+    /// list prices, so the monthly credit is 3,000 credits.
     static let creditUSD = 0.001
     static let monthlyCredits = Int((monthlyCredit / creditUSD).rounded())
 
@@ -134,8 +134,10 @@ final class SubscriptionManager {
     var isSignedIn: Bool { token != nil }
 
     /// BYOK is a subscriber perk: offered only on a real subscription.
-    var canUseOwnKey: Bool { !isDevKey && mintedKey != nil }
-    var usesOwnKey: Bool { canUseOwnKey && ownKey != nil }
+    /// A pasted key (Anthropic or OpenRouter) is its own way in — no
+    /// subscription needed.
+    var canUseOwnKey: Bool { !isDevKey }
+    var usesOwnKey: Bool { ownKey != nil && activeKey == ownKey }
 
     /// ChatGPT plan is the active source — the AI runs on the user's own
     /// ChatGPT Plus/Pro plan through the Responses API.
@@ -171,16 +173,17 @@ final class SubscriptionManager {
         return !dev.isEmpty
             || (keychain.read(Item.token) != nil && keychain.read(Item.mintedKey) != nil)
             || keychain.read(ChatGPTAuth.keychainAccount) != nil
+            || keychain.read(Item.ownKey) != nil
     }
 
-    /// Access precedence: dev key > the subscriber's own OpenRouter/Anthropic
-    /// key (BYOK) > ChatGPT plan > the subscription's minted key. BYOK only
-    /// exists on an active subscription; anyone holding both a ChatGPT sign-in
-    /// and a subscription can sign out of either in the account popover.
+    /// Access precedence: dev key > a pasted Anthropic/OpenRouter key >
+    /// ChatGPT plan > the subscription's minted key. The chooser presents
+    /// these as one pick, so holding several at once is rare; each can be
+    /// removed in the account popover or Settings.
     private func resolveState() {
         if isDevKey {
             state = .active(key: devKey)
-        } else if token != nil, mintedKey != nil, let ownKey {
+        } else if let ownKey {
             state = .active(key: ownKey)
         } else if chatGPT.isSignedIn {
             state = .active(key: ChatGPTAuth.planKey)
@@ -358,9 +361,9 @@ final class SubscriptionManager {
 
     // MARK: - BYOK
 
-    /// Swaps the subscriber's own key in for the minted one; every AI request
-    /// then bills their account instead of the monthly credit. OpenRouter
-    /// (`sk-or-…`) or Anthropic (`sk-ant-…`) — `AIBackend` routes by prefix.
+    /// The user's own key — one of the free ways in, no subscription needed;
+    /// their provider bills them. Anthropic (`sk-ant-…`) or OpenRouter
+    /// (`sk-or-…`) — `AIBackend` routes by prefix.
     func setOwnKey(_ raw: String) throws {
         guard canUseOwnKey else { throw SignInError.noSubscription }
         let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -374,6 +377,13 @@ final class SubscriptionManager {
         keychain.delete(Item.ownKey)
         ownKey = nil
         resolveState()
+    }
+
+    /// "Use a different way": drop every chat source so the AI tab shows the
+    /// chooser again. Signing out never cancels a paid plan.
+    func resetAccess() {
+        if chatGPT.isSignedIn { chatGPT.signOut() }
+        signOut()
     }
 
     // MARK: - Credit meter

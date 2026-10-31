@@ -261,7 +261,13 @@ struct AIChatView: View {
             if subscription.isActive {
                 chat
             } else {
-                AIPaywallView()
+                ScrollView {
+                    AIChooserView(mcp: appState.mcp)
+                        .frame(maxWidth: 560)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 32)
+                        .frame(maxWidth: .infinity)
+                }
             }
         }
         .background(Color.paper)
@@ -292,9 +298,9 @@ struct AIChatView: View {
     private func consumeReportRequest() {
         guard let kind = appState.aiReportRequest else { return }
         appState.aiReportRequest = nil
-        // Without a subscription this tab is the paywall (and Reconnect's ✨
+        // Until a way is set up this tab is the chooser (and Reconnect's ✨
         // is hidden), so drop the request — cleared above, so it doesn't fire
-        // again — and leave the paywall up.
+        // again — and leave the chooser up.
         guard subscription.isActive else { return }
         reportRequest = ReportRequest(kind: kind)
     }

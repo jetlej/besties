@@ -6,8 +6,9 @@ struct SettingsView: View {
     var body: some View {
         VStack(spacing: 12) {
             GeneralSettingsView(appState: appState)
-            AIAccountSettingsCard()
-            MCPSettingsView(mcp: appState.mcp)
+            SettingsCard(title: "AI") {
+                AIChooserView(mcp: appState.mcp, compact: true)
+            }
         }
         .padding(20)
         .frame(width: 500)
