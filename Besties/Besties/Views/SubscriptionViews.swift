@@ -88,34 +88,33 @@ struct AIChooserView: View {
     // MARK: Rows
 
     private func row(_ way: Way) -> some View {
-        let open = selected == way
         let active = inUse == way
+        let open = selected == way && hasDetail(way)
         return VStack(alignment: .leading, spacing: 0) {
-            Button {
-                notice = nil
-                selected = open ? nil : way
-            } label: {
-                HStack(spacing: 12) {
-                    Text(emoji(way))
-                        .font(.system(size: compact ? 18 : 22))
-                        .frame(width: compact ? 34 : 42, height: compact ? 34 : 42)
-                        .background(tint(way).opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title(way))
-                            .font(.system(size: compact ? 14 : 16, weight: .heavy, design: .rounded))
-                            .foregroundStyle(Color.ink)
-                        Text(caption(way))
-                            .font(compact ? .caption : .callout)
-                            .foregroundStyle(Color.ink.opacity(0.55))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 8)
-                    chip(way, active: active)
+            HStack(spacing: 12) {
+                Text(emoji(way))
+                    .font(.system(size: compact ? 18 : 22))
+                    .frame(width: compact ? 34 : 42, height: compact ? 34 : 42)
+                    .background(tint(way).opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title(way))
+                        .font(.system(size: compact ? 14 : 16, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Color.ink)
+                    Text(caption(way))
+                        .font(compact ? .caption : .callout)
+                        .foregroundStyle(Color.ink.opacity(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(compact ? 10 : 14)
-                .contentShape(Rectangle())
+                Spacer(minLength: 8)
+                trailing(way, active: active)
             }
-            .buttonStyle(.plain)
+            .padding(compact ? 10 : 14)
+            .contentShape(Rectangle())
+            // The header only opens details; the trailing button does the setup.
+            .onTapGesture {
+                notice = nil
+                selected = selected == way ? nil : way
+            }
 
             if open {
                 detail(way)
@@ -131,33 +130,71 @@ struct AIChooserView: View {
         }
         .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14)
-            .strokeBorder(active || open ? Color.sun : Color.ink.opacity(0.08), lineWidth: active || open ? 2 : 1))
+            .strokeBorder(active ? Color.sun : Color.ink.opacity(0.08), lineWidth: active ? 2 : 1))
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
+    /// The set-up button, or — for the way in use — an "In use" badge (its
+    /// details below hold the way to turn it off).
     @ViewBuilder
-    private func chip(_ way: Way, active: Bool) -> some View {
+    private func trailing(_ way: Way, active: Bool) -> some View {
         if active {
             Label("In use", systemImage: "checkmark")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
                 .background(Color.brandBlue, in: Capsule())
-        } else if way == .besties {
-            Text("$7/mo")
-                .font(.caption.weight(.heavy))
-                .foregroundStyle(Color.ink)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(Color.sun, in: Capsule())
+        } else if way == .chatGPT, chatGPT.state == .signingIn {
+            ProgressView().controlSize(.small)
         } else {
-            Text("Free")
-                .font(.caption.weight(.heavy))
-                .foregroundStyle(Color.green)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(Color.green.opacity(0.14), in: Capsule())
+            Button {
+                notice = nil
+                setUp(way)
+            } label: {
+                Text(cta(way))
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Color.ink)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(way == .besties ? Color.sun : Color.ink.opacity(0.07), in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func cta(_ way: Way) -> String {
+        switch way {
+        case .localApp: return "Turn on"
+        case .chatGPT: return "Sign in"
+        case .ownKey: return "Add key"
+        case .besties: return "Subscribe"
+        }
+    }
+
+    private func setUp(_ way: Way) {
+        switch way {
+        case .localApp:
+            clearOthers(keeping: .localApp)
+            mcp.enabled = true
+            selected = .localApp
+        case .chatGPT:
+            selected = .chatGPT
+            Task {
+                do {
+                    try await chatGPT.signIn()
+                    clearOthers(keeping: .chatGPT)
+                } catch let error as ChatGPTAuth.AuthError {
+                    notice = error.message
+                } catch {
+                    notice = error.localizedDescription
+                }
+            }
+        case .ownKey:
+            selected = .ownKey
+        case .besties:
+            NSWorkspace.shared.open(SubscriptionManager.subscribeURL)
+            selected = .besties
         }
     }
 
@@ -191,38 +228,30 @@ struct AIChooserView: View {
     private func caption(_ way: Way) -> String {
         switch way {
         case .localApp: return "LM Studio, Claude Desktop, Cursor… With a local model, nothing leaves your Mac."
-        case .chatGPT: return "Runs on your ChatGPT Plus or Pro plan."
+        case .chatGPT: return "Free with your ChatGPT Plus or Pro plan."
         case .ownKey: return "Anthropic bills you directly for what you use."
-        case .besties: return "Nothing to set up. Claude, GPT and more, with 3,000 AI credits every month."
+        case .besties: return "$7/mo. Nothing to set up — Claude, GPT and more, with 3,000 AI credits every month."
         }
     }
 
     // MARK: Details
 
-    @ViewBuilder
-    private func detail(_ way: Way) -> some View {
+    /// Whether a way has anything to show below its header right now.
+    private func hasDetail(_ way: Way) -> Bool {
         switch way {
-        case .localApp: localAppDetail
-        case .chatGPT: chatGPTDetail
-        case .ownKey: ownKeyDetail
-        case .besties: bestiesDetail
+        case .localApp: return mcp.enabled
+        case .chatGPT: return chatGPT.isSignedIn || chatGPT.state == .signingIn
+        case .ownKey, .besties: return true
         }
     }
 
     @ViewBuilder
-    private var localAppDetail: some View {
-        if mcp.enabled {
-            MCPConnectPanel(mcp: mcp)
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                primaryButton("Turn it on") {
-                    clearOthers(keeping: .localApp)
-                    mcp.enabled = true
-                }
-                Text("You'll get one line of setup to paste into your AI app.")
-                    .font(.caption)
-                    .foregroundStyle(Color.ink.opacity(0.45))
-            }
+    private func detail(_ way: Way) -> some View {
+        switch way {
+        case .localApp: MCPConnectPanel(mcp: mcp)
+        case .chatGPT: chatGPTDetail
+        case .ownKey: ownKeyDetail
+        case .besties: bestiesDetail
         }
     }
 
@@ -238,32 +267,10 @@ struct AIChooserView: View {
                 Spacer()
                 linkButton("Sign out", color: .orange) { chatGPT.signOut() }
             }
-        } else if chatGPT.state == .signingIn {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Finish signing in in your browser…")
-                    .font(.callout)
-                    .foregroundStyle(Color.ink.opacity(0.6))
-            }
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                primaryButton("Sign in with ChatGPT") {
-                    notice = nil
-                    Task {
-                        do {
-                            try await chatGPT.signIn()
-                            clearOthers(keeping: .chatGPT)
-                        } catch let error as ChatGPTAuth.AuthError {
-                            notice = error.message
-                        } catch {
-                            notice = error.localizedDescription
-                        }
-                    }
-                }
-                Text("GPT models only. Uses your plan's limits, not ours.")
-                    .font(.caption)
-                    .foregroundStyle(Color.ink.opacity(0.45))
-            }
+            Text("Finish signing in in your browser…")
+                .font(.callout)
+                .foregroundStyle(Color.ink.opacity(0.6))
         }
     }
 
@@ -287,7 +294,7 @@ struct AIChooserView: View {
                         .padding(.vertical, 8)
                         .background(Color.paper, in: RoundedRectangle(cornerRadius: 9))
                         .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.ink.opacity(0.15)))
-                    primaryButton("Use key", fill: false, action: saveKey)
+                    primaryButton("Use key", action: saveKey)
                         .disabled(keyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 HStack(spacing: 4) {
@@ -305,7 +312,7 @@ struct AIChooserView: View {
     @ViewBuilder
     private var bestiesDetail: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if subscription.isActive, !subscription.usesOwnKey, !subscription.usesChatGPTPlan, !subscription.isDevKey {
+            if inUse == .besties {
                 HStack {
                     Text("Signed in as \(subscription.email ?? "you")")
                         .font(.callout.weight(.medium))
@@ -317,9 +324,6 @@ struct AIChooserView: View {
                 }
                 AICreditMeter()
             } else {
-                primaryButton("Subscribe — $7/mo") {
-                    NSWorkspace.shared.open(SubscriptionManager.subscribeURL)
-                }
                 Text("Or $69/year. Cancel anytime.")
                     .font(.caption)
                     .foregroundStyle(Color.ink.opacity(0.45))
@@ -375,15 +379,14 @@ struct AIChooserView: View {
         if way != .localApp, mcp.enabled { mcp.enabled = false }
     }
 
-    private func primaryButton(_ title: String, fill: Bool = true, action: @escaping () -> Void) -> some View {
+    private func primaryButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 14, weight: .heavy, design: .rounded))
                 .foregroundStyle(Color.ink)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(fill ? Color.sun : Color.sun.opacity(0.0), in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(fill ? Color.clear : Color.ink.opacity(0.2)))
+                .background(Color.sun, in: RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
     }

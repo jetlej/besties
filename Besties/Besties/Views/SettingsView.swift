@@ -61,24 +61,36 @@ private struct GeneralSettingsView: View {
     @Bindable var appState: AppState
 
     var body: some View {
-        SettingsCard(title: "General") {
-            HStack(spacing: 6) {
-                Text("Include WhatsApp messages")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(appState.whatsAppInstalled ? Color.ink : Color.ink.opacity(0.4))
-                Image(systemName: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(Color.ink.opacity(0.35))
-                Spacer()
-                Toggle("Include WhatsApp messages", isOn: $appState.whatsAppEnabled)
+        SettingsCard {
+            HStack(spacing: 12) {
+                Image("WhatsAppGlyph")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 24, height: 24)
+                    .frame(width: 42, height: 42)
+                    .background(LinearGradient(colors: [Color(red: 91/255, green: 246/255, blue: 117/255),
+                                                        Color(red: 15/255, green: 188/255, blue: 56/255)],
+                                               startPoint: .top, endPoint: .bottom),
+                                in: RoundedRectangle(cornerRadius: 10))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Include WhatsApp")
+                        .font(.system(size: 16, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Color.ink)
+                    Text(appState.whatsAppInstalled
+                         ? "Adds the WhatsApp desktop app's history to iMessage. People are matched by phone number."
+                         : "WhatsApp isn't installed on this Mac.")
+                        .font(.callout)
+                        .foregroundStyle(Color.ink.opacity(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Toggle("Include WhatsApp", isOn: $appState.whatsAppEnabled)
                     .toggleStyle(.switch)
+                    .controlSize(.large)
                     .tint(Color.brandBlue)
                     .labelsHidden()
                     .disabled(!appState.whatsAppInstalled)
             }
-            .help(appState.whatsAppInstalled
-                  ? "Combines the WhatsApp desktop app's message history on this Mac with iMessage. People are matched by phone number."
-                  : "WhatsApp isn't installed on this Mac, so there's no WhatsApp history to include.")
         }
     }
 }
