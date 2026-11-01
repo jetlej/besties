@@ -23,7 +23,7 @@ module.exports = async (req, res) => {
       "line_items[0][quantity]": "1",
       allow_promotion_codes: "true",
       success_url: `${SITE_URL}/subscribed.html?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${SITE_URL}/#ai`,
+      cancel_url: `${SITE_URL}/ai.html`,
     },
   });
   res.redirect(303, session.url);

@@ -55,9 +55,10 @@ final class SubscriptionManager {
 
     static let shared = SubscriptionManager()
 
-    /// The site's plan picker (monthly $7 / yearly $69); its buttons start
-    /// Stripe Checkout through /api/subscribe.
-    static let subscribeURL = URL(string: "https://besties.gg/#ai")!
+    /// The plan picker (monthly / yearly), a page only the app links to —
+    /// the landing page never shows a price. Its buttons start Stripe
+    /// Checkout through /api/subscribe.
+    static let subscribeURL = URL(string: "https://besties.gg/ai.html")!
 
     /// What the subscription buys each month, in USD of model usage. Must equal
     /// MONTHLY_CREDIT in site/api/_lib/plan.js. The meter's denominator is this
