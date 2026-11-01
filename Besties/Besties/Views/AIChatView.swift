@@ -291,6 +291,13 @@ struct AIChatView: View {
         .onChange(of: subscription.isActive) {
             if subscription.isActive, showSetup { showSetup = false }
         }
+        // A newly connected way may not reach the remembered pick (ChatGPT
+        // can't run Claude): show the model it will actually use.
+        .onChange(of: subscription.activeKey, initial: true) {
+            if let key = subscription.activeKey, !model.model.isAvailable(withKey: key) {
+                model.model = .fallback(withKey: key)
+            }
+        }
         .sheet(item: $reportRequest) { request in
             AIReportView(appState: appState, kind: request.kind)
                 .frame(minWidth: 520, idealWidth: 620, minHeight: 520, idealHeight: 720)
@@ -661,7 +668,8 @@ struct AIChatView: View {
                             .allowsHitTesting(false)
                     }
                 }
-            modelMenu
+            // Nothing to pick until a way is set up; the first send opens the chooser.
+            if subscription.isActive { modelMenu }
             if model.isRunning && draftIsEmpty {
                 Button {
                     model.stop()
