@@ -112,8 +112,8 @@ struct TabBar: View {
 /// Reconnect's two lists: friends you drifted from, and people you added
 /// but never really texted.
 enum ReconnectMode: String, CaseIterable {
-    case drifted = "Drifted apart"
-    case followUp = "Never followed up"
+    case drifted = "Old friends"
+    case followUp = "Almost friends"
 
     var systemImage: String {
         switch self {

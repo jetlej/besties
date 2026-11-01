@@ -74,6 +74,8 @@ final class ChatGPTAuth {
     /// The issued client id (`oaiapp_…`) outlives sign-out, so a later sign-in
     /// reuses it rather than registering again.
     private static let clientIDAccount = "chatgptClientID"
+    /// `ext_agent_host_id`: one stable id per Mac, sent on every authorize.
+    private static let hostIDDefault = "chatgptHostID"
 
     // The official contract (developers.openai.com/siwc), followed exactly.
     private static let authorizeURL = URL(string: "https://auth.openai.com/api/accounts/authorize")!
@@ -125,6 +127,14 @@ final class ChatGPTAuth {
     var isSignedIn: Bool { credentials != nil }
     var email: String? { credentials?.email }
 
+    /// A `urn:uuid:` minted once per Mac and reused for every sign-in.
+    private static func hostID() -> String {
+        if let saved = UserDefaults.standard.string(forKey: hostIDDefault) { return saved }
+        let fresh = "urn:uuid:" + UUID().uuidString.lowercased()
+        UserDefaults.standard.set(fresh, forKey: hostIDDefault)
+        return fresh
+    }
+
     // MARK: - Sign-in
 
     /// Runs the whole browser flow. Throws an `AuthError` the paywall can show;
@@ -169,19 +179,27 @@ final class ChatGPTAuth {
         // after that the issued id is reused.
         let clientID = keychain.read(Self.clientIDAccount) ?? Self.dynamicClientID
 
-        var components = URLComponents(url: Self.authorizeURL, resolvingAgainstBaseURL: false)!
-        components.queryItems = [
-            URLQueryItem(name: "client_id", value: clientID),
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "scope", value: Self.scopes),
-            URLQueryItem(name: "state", value: stateParam),
-            URLQueryItem(name: "nonce", value: nonce),
-            URLQueryItem(name: "code_challenge", value: challenge),
-            URLQueryItem(name: "code_challenge_method", value: "S256"),
-            URLQueryItem(name: "resource", value: Self.resource),
+        var params: [(String, String)] = [("client_id", clientID)]
+        // Registration only: the name users see on OpenAI's consent screen.
+        if clientID == Self.dynamicClientID { params.append(("agent_name_hint", appName)) }
+        params += [
+            ("ext_agent_host_id", Self.hostID()),
+            ("response_type", "code"),
+            ("redirect_uri", redirectURI),
+            ("scope", Self.scopes),
+            ("resource", Self.resource),
+            ("state", stateParam),
+            ("nonce", nonce),
+            ("code_challenge", challenge),
+            ("code_challenge_method", "S256"),
         ]
-        NSWorkspace.shared.open(components.url!)
+        // Every value fully percent-encoded (URLComponents leaves ":" and "/"
+        // in query values alone; the contract says to encode them).
+        let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        let query = params
+            .map { "\($0)=\($1.addingPercentEncoding(withAllowedCharacters: unreserved) ?? $1)" }
+            .joined(separator: "&")
+        NSWorkspace.shared.open(URL(string: Self.authorizeURL.absoluteString + "?" + query)!)
 
         let callback = try await server.waitForCallback(timeout: Self.signInTimeout)
         guard callback["state"] == stateParam else { throw AuthError.stateMismatch }
