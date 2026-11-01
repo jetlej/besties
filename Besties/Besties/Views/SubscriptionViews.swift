@@ -31,10 +31,8 @@ struct AIChooserView: View {
         return title
     }()
 
-    /// The way currently in use. The dev key overrides everything and isn't
-    /// one of the four, so it's shown separately.
+    /// The way currently in use.
     private var inUse: Way? {
-        if subscription.isDevKey { return nil }
         if subscription.usesOwnKey { return .ownKey }
         if subscription.usesChatGPTPlan { return .chatGPT }
         if subscription.isActive { return .besties }
@@ -55,13 +53,6 @@ struct AIChooserView: View {
                         .foregroundStyle(Color.ink.opacity(0.55))
                 }
                 .padding(.bottom, 6)
-            }
-            if subscription.isDevKey {
-                // DEV CARVE-OUT — REMOVE AT SHIP (SubscriptionManager.devKey).
-                Text("The dev key (anthropicKey default) is on and overrides these.")
-                    .font(.caption)
-                    .foregroundStyle(Color.orange)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             ForEach(Way.allCases, id: \.self) { way in
                 row(way)
@@ -610,7 +601,6 @@ struct AIAccountButton: View {
     }
 
     private var label: String {
-        if subscription.isDevKey { return "Dev key" }
         if subscription.usesChatGPTPlan { return ChatGPTAuth.shared.email ?? "ChatGPT plan" }
         if subscription.usesOwnKey { return "Your API key" }
         if !subscription.isActive { return "Set up AI" }
@@ -627,10 +617,7 @@ private struct AIAccountPopover: View {
             Text("Besties AI")
                 .font(.system(size: 17, weight: .heavy, design: .rounded))
                 .foregroundStyle(Color.ink)
-            if subscription.isDevKey {
-                // DEV CARVE-OUT — REMOVE AT SHIP (SubscriptionManager.devKey).
-                line("Using the dev key from the anthropicKey default.")
-            } else if subscription.usesChatGPTPlan {
+            if subscription.usesChatGPTPlan {
                 line("Using your ChatGPT plan — \(ChatGPTAuth.shared.email ?? "signed in")")
                 note("GPT models only. Uses your plan's limits, not ours.")
             } else if subscription.usesOwnKey {
@@ -640,16 +627,14 @@ private struct AIAccountPopover: View {
                 line("Signed in as \(subscription.email ?? "you")")
                 AICreditMeter()
             }
-            if !subscription.isDevKey {
-                Divider()
-                Button("Use a different way") {
-                    subscription.resetAccess()
-                    dismiss()
-                }
-                .buttonStyle(.plain)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(Color.orange)
+            Divider()
+            Button("Use a different way") {
+                subscription.resetAccess()
+                dismiss()
             }
+            .buttonStyle(.plain)
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(Color.orange)
         }
         .padding(16)
         .frame(width: 300, alignment: .leading)

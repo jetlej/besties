@@ -105,11 +105,8 @@ cancel sub → key dies after webhook.
   https://besties.gg until the Stripe subscription payment link exists (Phase 4).
 - The semantic index (`AIVectorIndex`, ~1 h of background embedding) is created only
   when AI was unlocked at launch; subscribing mid-session gets it from the next launch.
-- **DEV CARVE-OUT — remove at ship:** a non-empty `anthropicKey` default makes the
-  state `active(thatKey)` with no meter, no BYOK and no network, so the prototype
-  workflow keeps working until the backend is deployed. Delete `Default.devKey`, the
-  `isDevKey` branches in `SubscriptionManager`, and the dev note in `AIAccountPopover`
-  before Phase 4 ships.
+- The dev carve-out (an `anthropicKey` default that unlocked the AI tab) is gone
+  (2026-11-01): everyone, Jordan included, sets AI up through the chooser.
 
 ## Phase 4 — Site + rollout (~half day)
 

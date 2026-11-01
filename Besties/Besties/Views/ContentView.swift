@@ -126,6 +126,8 @@ enum ReconnectMode: String, CaseIterable {
 /// The main tab bar's look at a smaller size: sun pill sliding on a gray track.
 struct ReconnectModeToggle: View {
     @Binding var selection: ReconnectMode
+    /// False on narrow windows: icons only, names in the tooltip.
+    var showsLabels = true
     @Namespace private var pillNS
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -142,10 +144,12 @@ struct ReconnectModeToggle: View {
                     HStack(spacing: 6) {
                         Image(systemName: mode.systemImage)
                             .font(.system(size: 13, weight: .bold))
-                        Text(mode.rawValue)
-                            .font(.system(size: 14, weight: .bold))
-                            .lineLimit(1)
-                            .fixedSize()
+                        if showsLabels {
+                            Text(mode.rawValue)
+                                .font(.system(size: 14, weight: .bold))
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
                     }
                     .padding(.vertical, 7)
                     .padding(.horizontal, 14)
@@ -160,6 +164,7 @@ struct ReconnectModeToggle: View {
                     .contentShape(RoundedRectangle(cornerRadius: 9))
                 }
                 .buttonStyle(.plain)
+                .help(showsLabels ? "" : mode.rawValue)
             }
         }
         .padding(3)
@@ -298,27 +303,8 @@ struct ContentView: View {
                     switch selectedTab {
                     case .reconnect:
                         VStack(spacing: 8) {
-                            HStack(spacing: 10) {
-                                ReconnectModeToggle(selection: $reconnectMode)
-                                if reconnectMode == .drifted {
-                                    Text("Last Contact:")
-                                        .font(.callout)
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize()
-                                    Picker("", selection: $selectedRange) {
-                                        ForEach(TimeRange.allCases) { range in
-                                            Text(range.label).tag(range)
-                                        }
-                                    }
-                                    .fixedSize()
-                                }
-                                Spacer(minLength: 0)
-                                // Shrinks before the toggle or the range picker do.
-                                searchField
-                                    .frame(minWidth: 120, maxWidth: Self.searchFieldWidth)
-                            }
-                            .frame(height: 38)
-                            .padding(.horizontal, 16)
+                            reconnectHeader
+                                .padding(.horizontal, 16)
                             if reconnectMode == .followUp {
                                 FollowUpListView(
                                     appState: appState,
@@ -561,6 +547,52 @@ struct ContentView: View {
         return date.formatted(.dateTime.month(.wide).year())
     }
 
+    /// One row when it fits; narrower windows put the filters on a second
+    /// row, then shrink the toggle to icons. Never clips.
+    private var reconnectHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .bottom, spacing: 12) {
+                ReconnectModeToggle(selection: $reconnectMode)
+                lastContactPicker
+                Spacer(minLength: 0)
+                searchField
+                    .frame(width: 180)
+            }
+            ForEach([true, false], id: \.self) { labels in
+                VStack(alignment: .leading, spacing: 8) {
+                    ReconnectModeToggle(selection: $reconnectMode, showsLabels: labels)
+                    HStack(alignment: .bottom, spacing: 12) {
+                        lastContactPicker
+                        Spacer(minLength: 0)
+                        searchField
+                            .frame(minWidth: 110, maxWidth: Self.searchFieldWidth)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Label above the picker. Kept in the layout (invisible) on the other
+    /// list so switching lists never moves anything.
+    private var lastContactPicker: some View {
+        let shown = reconnectMode == .drifted
+        return VStack(alignment: .leading, spacing: 3) {
+            Text("Last contact")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Picker("Last contact", selection: $selectedRange) {
+                ForEach(TimeRange.allCases) { range in
+                    Text(range.label).tag(range)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
+        .opacity(shown ? 1 : 0)
+        .allowsHitTesting(shown)
+        .accessibilityHidden(!shown)
+    }
+
     private var reconnectTable: some View {
         Table(filteredReconnect, sortOrder: $sortOrder) {
             TableColumn("Name", value: \.resolvedName, comparator: .localizedStandard) { convo in
@@ -582,7 +614,7 @@ struct ContentView: View {
                 Text("\(convo.daysSinceLastMessage)d ago")
                     .foregroundStyle(.secondary)
             }
-            .width(min: 70, ideal: 70, max: 90)
+            .width(min: 104, ideal: 104, max: 120)
 
             TableColumn("Messages", value: \.totalMessages) { convo in
                 Text("\(convo.totalMessages)")
@@ -593,7 +625,7 @@ struct ContentView: View {
             TableColumn("Score", value: \.score) { convo in
                 ScoreCell(score: convo.score, breakdown: convo.scoreBreakdown)
             }
-            .width(min: 40, ideal: 40, max: 50)
+            .width(min: 62, ideal: 62, max: 70)
 
             TableColumn("") { convo in
                 HStack(spacing: 4) {

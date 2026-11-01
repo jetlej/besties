@@ -87,25 +87,14 @@ final class SubscriptionManager {
     private enum Default {
         static let email = "aiAccountEmail"
         static let checkedAt = "aiKeyCheckedAt"
-        /// DEV CARVE-OUT — REMOVE AT SHIP (see `devKey`).
-        static let devKey = "anthropicKey"
     }
 
     private(set) var state: State = .noSubscription
     /// USD left this month on the minted key; nil until read, and always nil
-    /// for the dev key or a BYOK key (neither is the subscription's credit).
+    /// for a BYOK key (not the subscription's credit).
     private(set) var creditRemaining: Double?
     /// The address signed in with, for the account popover.
     private(set) var email: String?
-
-    /// DEV CARVE-OUT — REMOVE AT SHIP. A non-empty `anthropicKey` default
-    /// (`defaults write com.besties.app anthropicKey sk-ant-…` or `sk-or-…`,
-    /// relaunch) makes the state `active(thatKey)` with no meter and no network,
-    /// so the prototype workflow keeps working until the billing backend is
-    /// deployed. Delete this, `Default.devKey` and every `isDevKey` branch
-    /// before the subscription ships.
-    let isDevKey: Bool
-    private let devKey: String
 
     private let keychain: KeychainStore
     private let defaults: UserDefaults
@@ -133,17 +122,13 @@ final class SubscriptionManager {
     /// has lapsed, so the paywall can offer a re-check instead of a sign-in.
     var isSignedIn: Bool { token != nil }
 
-    /// BYOK is a subscriber perk: offered only on a real subscription.
-    /// A pasted key (Anthropic or OpenRouter) is its own way in — no
-    /// subscription needed.
-    var canUseOwnKey: Bool { !isDevKey }
     var usesOwnKey: Bool { ownKey != nil && activeKey == ownKey }
 
     /// ChatGPT plan is the active source — the AI runs on the user's own
     /// ChatGPT Plus/Pro plan through the Responses API.
     var usesChatGPTPlan: Bool { activeKey == ChatGPTAuth.planKey }
 
-    var showsMeter: Bool { !isDevKey && !usesOwnKey && !usesChatGPTPlan && isActive && creditRemaining != nil }
+    var showsMeter: Bool { !usesOwnKey && !usesChatGPTPlan && isActive && creditRemaining != nil }
 
     init(keychain: KeychainStore = KeychainStore(service: "com.besties.app"),
          defaults: UserDefaults = .standard,
@@ -153,8 +138,6 @@ final class SubscriptionManager {
         self.defaults = defaults
         self.transport = transport
         self.now = now
-        devKey = defaults.string(forKey: Default.devKey)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        isDevKey = !devKey.isEmpty
         token = keychain.read(Item.token)
         mintedKey = keychain.read(Item.mintedKey)
         ownKey = keychain.read(Item.ownKey)
@@ -167,23 +150,18 @@ final class SubscriptionManager {
     /// actor — AppState uses it to decide whether the semantic index (an hour
     /// of background embedding) is worth building at all.
     nonisolated static var hasStoredAccess: Bool {
-        let dev = UserDefaults.standard.string(forKey: Default.devKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let keychain = KeychainStore(service: "com.besties.app")
-        return !dev.isEmpty
-            || (keychain.read(Item.token) != nil && keychain.read(Item.mintedKey) != nil)
+        return (keychain.read(Item.token) != nil && keychain.read(Item.mintedKey) != nil)
             || keychain.read(ChatGPTAuth.keychainAccount) != nil
             || keychain.read(Item.ownKey) != nil
     }
 
-    /// Access precedence: dev key > a pasted Anthropic/OpenRouter key >
+    /// Access precedence: a pasted Anthropic/OpenRouter key >
     /// ChatGPT plan > the subscription's minted key. The chooser presents
     /// these as one pick, so holding several at once is rare; each can be
     /// removed in the account popover or Settings.
     private func resolveState() {
-        if isDevKey {
-            state = .active(key: devKey)
-        } else if let ownKey {
+        if let ownKey {
             state = .active(key: ownKey)
         } else if chatGPT.isSignedIn {
             state = .active(key: ChatGPTAuth.planKey)
@@ -203,7 +181,7 @@ final class SubscriptionManager {
     /// itself stops a lapsed key once the webhook zeroes its limit. Signed in
     /// without a key (lapsed, or a failed first fetch) always checks.
     func refreshIfDue() async {
-        guard !isDevKey, token != nil else { return }
+        guard token != nil else { return }
         if mintedKey != nil, let last = defaults.object(forKey: Default.checkedAt) as? Date {
             let age = now().timeIntervalSince(last)
             // A negative age means the clock moved backwards; check rather than trust it.
@@ -365,7 +343,6 @@ final class SubscriptionManager {
     /// their provider bills them. Anthropic (`sk-ant-…`) or OpenRouter
     /// (`sk-or-…`) — `AIBackend` routes by prefix.
     func setOwnKey(_ raw: String) throws {
-        guard canUseOwnKey else { throw SignInError.noSubscription }
         let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard key.hasPrefix("sk-or-") || key.hasPrefix("sk-ant-"), key.count > 10 else { throw SignInError.invalidKey }
         keychain.write(key, for: Item.ownKey)
@@ -392,7 +369,7 @@ final class SubscriptionManager {
     /// self-inspection endpoint (`GET /api/v1/key` → `data.limit_remaining`,
     /// USD, null when the key has no limit).
     func refreshMeter() async {
-        guard !isDevKey, ownKey == nil, let key = mintedKey else { return }
+        guard ownKey == nil, let key = mintedKey else { return }
         var request = URLRequest(url: Self.keyInfoURL, timeoutInterval: 20)
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         guard let (data, response) = try? await transport(request), key == mintedKey else { return }
