@@ -50,13 +50,15 @@
      * to Reddit's Conversions API with IP + user agent for matching.
      * Attribution comes from the rdt_cid click id Reddit appends to ad
      * URLs, stashed in localStorage so it survives the Stripe round-trip
-     * to the thanks page. Only the events in EVENTS are forwarded;
+     * to the post-checkout page (subscribed.html). Only the events in EVENTS are forwarded;
      * everything else (scroll depth, FAQ opens, …) stays PostHog-only.
      * Copy this shape for Meta/TikTok later — new endpoint, new map. */
     {
       EVENTS: {
         pageview:          "PageVisit",
-        checkout_start:    "AddToCart",
+        download_click:    "SignUp",      // the app is free: a download is the conversion
+        mac_link_sent:     "Lead",        // phone visitor emailed themselves the link
+        checkout_start:    "AddToCart",   // Besties AI subscription checkout
         purchase_complete: "Purchase"
       },
       init: function () {
@@ -81,7 +83,7 @@
         } catch (e) {}
         if (event === "purchase_complete") {
           /* Stripe session id → conversion_id so Reddit dedupes retries
-           * even where the thanks page's localStorage guard can't. */
+           * even where subscribed.html's localStorage guard can't. */
           body.conv = new URLSearchParams(location.search).get("session_id");
         }
         navigator.sendBeacon("/api/e",

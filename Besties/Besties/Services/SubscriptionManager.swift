@@ -3,9 +3,11 @@ import Observation
 import os
 import Security
 
-/// Who gets the AI tab, and with which OpenRouter key — Phase 3 of
+/// Who gets the AI tab, and with which key — Phase 3 of
 /// docs/ai-subscription-plan.md. There is no free trial: without an active
-/// key the AI tab is a paywall.
+/// access source the AI tab is a paywall. Besides the subscription (and its
+/// BYOK perk) there is the ChatGPT plan: `ChatGPTAuth`'s sign-in, folded into
+/// the precedence in `resolveState` via the `planKey` sentinel.
 ///
 /// The billing API (site/api) only ever learns "this email has an active
 /// subscription": sign-in is email → 6-digit code (`auth-request` /
@@ -42,7 +44,7 @@ final class SubscriptionManager {
             case .noSubscription: "No active subscription for that email."
             case .signedOut: "Your sign-in expired. Sign in again."
             case .keyUnavailable: "You're signed in, but Besties AI didn't load. Try again in a minute."
-            case .invalidKey: "OpenRouter keys start with sk-or-."
+            case .invalidKey: "Keys start with sk-or- (OpenRouter) or sk-ant- (Anthropic)."
             case .offline: "Couldn't reach Besties. Check your internet connection."
             case .server: "Something went wrong on our end. Try again in a minute."
             }
@@ -53,15 +55,23 @@ final class SubscriptionManager {
 
     static let shared = SubscriptionManager()
 
-    /// SUBSCRIBE_URL — PLACEHOLDER. Replace with the Stripe subscription
-    /// payment link once it exists (Phase 4); until then it opens the site.
-    static let subscribeURL = URL(string: "https://besties.gg")!
+    /// The plan picker (monthly / yearly), a page only the app links to —
+    /// the landing page never shows a price. Its buttons start Stripe
+    /// Checkout through /api/subscribe.
+    static let subscribeURL = URL(string: "https://besties.gg/ai.html")!
 
-    /// What the subscription buys each month, in USD. The meter's denominator
-    /// is this constant, not the key's OpenRouter `limit`: the webhook tops the
-    /// limit up to `usage + $9` every invoice, so `limit` grows forever while
-    /// `limit_remaining` is the month's balance.
-    static let monthlyCredit = 9.0
+    /// What the subscription buys each month, in USD of model usage. Must equal
+    /// MONTHLY_CREDIT in site/api/_lib/plan.js. The meter's denominator is this
+    /// constant, not the
+    /// key's OpenRouter `limit`: each month's top-up sets the limit to
+    /// `usage + credit`, so `limit` grows forever while `limit_remaining` is
+    /// the month's balance.
+    static let monthlyCredit = 3.0
+
+    /// The unit shown to subscribers: 1 credit = $0.001 of model usage at
+    /// list prices, so the monthly credit is 3,000 credits.
+    static let creditUSD = 0.001
+    static let monthlyCredits = Int((monthlyCredit / creditUSD).rounded())
 
     static let recheckInterval: TimeInterval = 7 * 24 * 3600
 
@@ -78,30 +88,21 @@ final class SubscriptionManager {
     private enum Default {
         static let email = "aiAccountEmail"
         static let checkedAt = "aiKeyCheckedAt"
-        /// DEV CARVE-OUT — REMOVE AT SHIP (see `devKey`).
-        static let devKey = "anthropicKey"
     }
 
     private(set) var state: State = .noSubscription
     /// USD left this month on the minted key; nil until read, and always nil
-    /// for the dev key or a BYOK key (neither is the subscription's credit).
+    /// for a BYOK key (not the subscription's credit).
     private(set) var creditRemaining: Double?
     /// The address signed in with, for the account popover.
     private(set) var email: String?
-
-    /// DEV CARVE-OUT — REMOVE AT SHIP. A non-empty `anthropicKey` default
-    /// (`defaults write com.besties.app anthropicKey sk-ant-…` or `sk-or-…`,
-    /// relaunch) makes the state `active(thatKey)` with no meter and no network,
-    /// so the prototype workflow keeps working until the billing backend is
-    /// deployed. Delete this, `Default.devKey` and every `isDevKey` branch
-    /// before the subscription ships.
-    let isDevKey: Bool
-    private let devKey: String
 
     private let keychain: KeychainStore
     private let defaults: UserDefaults
     private let transport: Transport
     private let now: () -> Date
+    /// The ChatGPT-plan sign-in; its state changes re-run `resolveState`.
+    private let chatGPT = ChatGPTAuth.shared
 
     private var token: String?
     private var mintedKey: String?
@@ -122,11 +123,13 @@ final class SubscriptionManager {
     /// has lapsed, so the paywall can offer a re-check instead of a sign-in.
     var isSignedIn: Bool { token != nil }
 
-    /// BYOK is a subscriber perk: offered only on a real subscription.
-    var canUseOwnKey: Bool { !isDevKey && mintedKey != nil }
-    var usesOwnKey: Bool { canUseOwnKey && ownKey != nil }
+    var usesOwnKey: Bool { ownKey != nil && activeKey == ownKey }
 
-    var showsMeter: Bool { !isDevKey && !usesOwnKey && isActive && creditRemaining != nil }
+    /// ChatGPT plan is the active source — the AI runs on the user's own
+    /// ChatGPT Plus/Pro plan through the Responses API.
+    var usesChatGPTPlan: Bool { activeKey == ChatGPTAuth.planKey }
+
+    var showsMeter: Bool { !usesOwnKey && !usesChatGPTPlan && isActive && creditRemaining != nil }
 
     init(keychain: KeychainStore = KeychainStore(service: "com.besties.app"),
          defaults: UserDefaults = .standard,
@@ -136,12 +139,11 @@ final class SubscriptionManager {
         self.defaults = defaults
         self.transport = transport
         self.now = now
-        devKey = defaults.string(forKey: Default.devKey)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        isDevKey = !devKey.isEmpty
         token = keychain.read(Item.token)
         mintedKey = keychain.read(Item.mintedKey)
         ownKey = keychain.read(Item.ownKey)
         email = defaults.string(forKey: Default.email)
+        chatGPT.onChange = { [weak self] in self?.resolveState() }
         resolveState()
     }
 
@@ -149,17 +151,23 @@ final class SubscriptionManager {
     /// actor — AppState uses it to decide whether the semantic index (an hour
     /// of background embedding) is worth building at all.
     nonisolated static var hasStoredAccess: Bool {
-        let dev = UserDefaults.standard.string(forKey: Default.devKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let keychain = KeychainStore(service: "com.besties.app")
-        return !dev.isEmpty || (keychain.read(Item.token) != nil && keychain.read(Item.mintedKey) != nil)
+        return (keychain.read(Item.token) != nil && keychain.read(Item.mintedKey) != nil)
+            || keychain.read(ChatGPTAuth.keychainAccount) != nil
+            || keychain.read(Item.ownKey) != nil
     }
 
+    /// Access precedence: a pasted Anthropic/OpenRouter key >
+    /// ChatGPT plan > the subscription's minted key. The chooser presents
+    /// these as one pick, so holding several at once is rare; each can be
+    /// removed in the account popover or Settings.
     private func resolveState() {
-        if isDevKey {
-            state = .active(key: devKey)
+        if let ownKey {
+            state = .active(key: ownKey)
+        } else if chatGPT.isSignedIn {
+            state = .active(key: ChatGPTAuth.planKey)
         } else if token != nil, let mintedKey {
-            state = .active(key: ownKey ?? mintedKey)
+            state = .active(key: mintedKey)
         } else if let pendingEmail {
             state = .needsSignIn(email: pendingEmail)
         } else {
@@ -174,7 +182,7 @@ final class SubscriptionManager {
     /// itself stops a lapsed key once the webhook zeroes its limit. Signed in
     /// without a key (lapsed, or a failed first fetch) always checks.
     func refreshIfDue() async {
-        guard !isDevKey, token != nil else { return }
+        guard token != nil else { return }
         if mintedKey != nil, let last = defaults.object(forKey: Default.checkedAt) as? Date {
             let age = now().timeIntervalSince(last)
             // A negative age means the clock moved backwards; check rather than trust it.
@@ -332,12 +340,12 @@ final class SubscriptionManager {
 
     // MARK: - BYOK
 
-    /// Swaps the subscriber's own OpenRouter key in for the minted one; every
-    /// AI request then bills their account instead of the $9 credit.
+    /// The user's own key — one of the free ways in, no subscription needed;
+    /// their provider bills them. Anthropic (`sk-ant-…`) or OpenRouter
+    /// (`sk-or-…`) — `AIBackend` routes by prefix.
     func setOwnKey(_ raw: String) throws {
-        guard canUseOwnKey else { throw SignInError.noSubscription }
         let key = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard key.hasPrefix("sk-or-"), key.count > 10 else { throw SignInError.invalidKey }
+        guard key.hasPrefix("sk-or-") || key.hasPrefix("sk-ant-"), key.count > 10 else { throw SignInError.invalidKey }
         keychain.write(key, for: Item.ownKey)
         ownKey = key
         resolveState()
@@ -349,13 +357,20 @@ final class SubscriptionManager {
         resolveState()
     }
 
+    /// "Use a different way": drop every chat source so the AI tab shows the
+    /// chooser again. Signing out never cancels a paid plan.
+    func resetAccess() {
+        if chatGPT.isSignedIn { chatGPT.signOut() }
+        signOut()
+    }
+
     // MARK: - Credit meter
 
     /// Reads the minted key's remaining credit from OpenRouter's key
     /// self-inspection endpoint (`GET /api/v1/key` → `data.limit_remaining`,
     /// USD, null when the key has no limit).
     func refreshMeter() async {
-        guard !isDevKey, ownKey == nil, let key = mintedKey else { return }
+        guard ownKey == nil, let key = mintedKey else { return }
         var request = URLRequest(url: Self.keyInfoURL, timeoutInterval: 20)
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         guard let (data, response) = try? await transport(request), key == mintedKey else { return }

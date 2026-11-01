@@ -1,6 +1,6 @@
 // Authorization: Bearer <session token from auth-verify> → re-checks the
 // Stripe subscription, then finds or creates that customer's OpenRouter
-// runtime key ($9 limit) and returns {key, limit, usage} (USD).
+// runtime key (monthly-credit limit) and returns {key, limit, usage} (USD).
 //
 // OpenRouter returns a key's plaintext only once, at creation
 // (POST /api/v1/keys), so Redis keeps {hash, sealed key} per customer:
@@ -9,24 +9,24 @@
 // can't be unsealed (SEAL_SECRET changed), it's replaced: the old key is
 // deleted and a new one minted carrying over the old key's remaining credit.
 //
-// A $9 mint for a new key records the subscription's latest invoice as
+// A monthly-credit mint for a new key records the subscription's latest invoice as
 // credited (`orcredit:<invoice id>`), so stripe-webhook doesn't top up the
 // same invoice again when its invoice.paid arrives after the mint.
 //
-// Env: STRIPE_SECRET_KEY, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN,
+// Env: STRIPE_SECRET_KEY, KV_REST_API_URL, KV_REST_API_TOKEN (Vercel's Upstash integration),
 //      OPENROUTER_PROVISIONING_KEY (an OpenRouter "management key"), AUTH_SECRET,
 //      SEAL_SECRET (dedicated sealing secret, independent of AUTH_SECRET so
 //      rotating session tokens doesn't strand stored keys)
 const crypto = require("crypto");
 
-const MONTHLY_CREDIT = 9; // USD
+const { MONTHLY_CREDIT } = require("./_lib/plan"); // USD per month
 const CREDIT_TTL = 40 * 24 * 3600; // one billing period + Stripe's retry window
 const OR_KEYS = "https://openrouter.ai/api/v1/keys";
 
 async function redis(...cmd) {
-  const r = await fetch(process.env.UPSTASH_REDIS_REST_URL, {
+  const r = await fetch(process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL, {
     method: "POST",
-    headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` },
+    headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN}` },
     body: JSON.stringify(cmd),
   });
   const j = await r.json();
@@ -168,7 +168,7 @@ module.exports = async (req, res) => {
       res.status(402).json({ error: "no_subscription" });
       return;
     }
-    res.status(200).json(await findOrCreateKey(session.cid, sub));
+    res.status(200).json({ ...(await findOrCreateKey(session.cid, sub)), monthlyCredit: MONTHLY_CREDIT });
   } catch (e) {
     console.error("ai-key:", e.message);
     res.status(502).json({ error: "upstream_error" });

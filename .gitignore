@@ -24,3 +24,4 @@ Besties.dmg
 .cursor/
 *.code-workspace
 build-debug/
+preview-*.html

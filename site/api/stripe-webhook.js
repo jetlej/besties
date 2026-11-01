@@ -1,30 +1,32 @@
 // Stripe webhook (subscribe the endpoint to invoice.paid and
 // customer.subscription.deleted only).
-//   invoice.paid                  → OpenRouter key limit = usage + $9 (monthly top-up;
-//                                   unused credit doesn't roll over). Skipped for an
+//   invoice.paid                  → OpenRouter key limit = usage + monthly credit (the
+//                                   month's top-up; unused credit doesn't roll over;
+//                                   yearly plans get months 2–12 from credit-topup.js).
+//                                   Skipped for an
 //                                   invoice already credited (`orcredit:<id>`, set by
-//                                   ai-key's $9 mint or an earlier top-up).
+//                                   ai-key's mint or an earlier top-up).
 //   customer.subscription.deleted → OpenRouter key limit = usage (key stops working),
 //                                   unless the customer still has another active sub
-// Customers who haven't signed in yet have no key; ai-key mints one at $9.
+// Customers who haven't signed in yet have no key; ai-key mints one at the monthly credit.
 // Each event id is processed once: a 60 s in-progress lock while it runs, and a
 // 7-day done marker written only after it succeeds. A run killed mid-way leaves
 // no done marker, so Stripe's retry (after the lock expires) processes it.
 //
-// Env: STRIPE_WEBHOOK_SECRET, STRIPE_SECRET_KEY, UPSTASH_REDIS_REST_URL,
-//      UPSTASH_REDIS_REST_TOKEN, OPENROUTER_PROVISIONING_KEY
+// Env: STRIPE_WEBHOOK_SECRET, STRIPE_SECRET_KEY, KV_REST_API_URL,
+//      KV_REST_API_TOKEN, OPENROUTER_PROVISIONING_KEY
 const crypto = require("crypto");
 
-const MONTHLY_CREDIT = 9; // USD
+const { MONTHLY_CREDIT } = require("./_lib/plan"); // USD per month
 const TOLERANCE = 300; // seconds, same as Stripe's libraries
 const SEEN_TTL = 7 * 24 * 3600; // Stripe retries for up to 3 days
 const LOCK_TTL = 60; // seconds; a normal run takes a few (one Stripe + two OpenRouter calls)
 const CREDIT_TTL = 40 * 24 * 3600; // one billing period + Stripe's retry window
 
 async function redis(...cmd) {
-  const r = await fetch(process.env.UPSTASH_REDIS_REST_URL, {
+  const r = await fetch(process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL, {
     method: "POST",
-    headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` },
+    headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN}` },
     body: JSON.stringify(cmd),
   });
   const j = await r.json();

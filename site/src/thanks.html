@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>You're in! — __APP_NAME__</title>
+<title>Downloading __APP_NAME__</title>
 <meta name="robots" content="noindex">
 <meta name="color-scheme" content="light">
 <link rel="icon" type="image/png" href="/icon.png">
@@ -54,7 +54,6 @@
   .btn:active { transform: translate(2px,2px); box-shadow: 0 0 0 var(--ink); }
   .steps { text-align: left; margin: 26px auto 0; max-width: 340px; font-size: .95rem; color: var(--muted); }
   .steps li { margin-bottom: 6px; }
-  .err { display: none; color: var(--muted); font-size: .95rem; margin-top: 18px; }
   footer { margin-top: 26px; font-size: .85rem; color: var(--muted); }
   @media (prefers-reduced-motion: reduce) { .card, .pill { animation: none; } }
 </style>
@@ -63,8 +62,8 @@
   <div class="card">
     <img class="pill" src="/icon.png" alt="" width="84" height="84">
     <h1 class="display">Time travel <span class="hl">awaits</span>.</h1>
-    <a class="btn" id="dlBtn" href="#">Download __APP_NAME__</a>
-    <p class="err" id="err">Hmm — we couldn't verify this purchase link. If you just paid, use the link from your email receipt, or reply to it and a human will sort you out.</p>
+    <p>Your download should start in a moment.</p>
+    <a class="btn" id="dlBtn" href="/api/download" data-t="download_retry_click">Download __APP_NAME__</a>
     <ol class="steps">
       <li>Open the download</li>
       <li>Drag <b>__APP_NAME__</b> into the Applications folder</li>
@@ -73,21 +72,14 @@
     <footer>P.S. Go text your mom. 📱</footer>
   </div>
 <script>
-  const sid = new URLSearchParams(location.search).get("session_id") || "";
-  const btn = document.getElementById("dlBtn");
-  if (/^cs_(test|live)_[A-Za-z0-9]+$/.test(sid)) {
-    btn.href = "/api/download?session_id=" + encodeURIComponent(sid);
-    // Track each purchase once, not on every reload of this page.
-    try {
-      const k = "bt_pc_" + sid;
-      if (!localStorage.getItem(k)) { localStorage.setItem(k, "1"); bt.track("purchase_complete"); }
-    } catch { bt.track("purchase_complete"); }
-    btn.addEventListener("click", () => bt.track("download_click"));
-  } else {
-    btn.style.display = "none";
-    document.getElementById("err").style.display = "block";
-    bt.track("download_error");
-  }
+  // Start the download once per visit; the button is the fallback.
+  // Counted as a download (the ad conversion) only when it really starts.
+  window.addEventListener("load", () => {
+    setTimeout(() => {
+      bt.track("download_click", { location: "auto" });
+      location.href = "/api/download";
+    }, 600);
+  });
 </script>
 </body>
 </html>

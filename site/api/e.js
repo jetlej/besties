@@ -3,7 +3,7 @@
 // Reddit hostname. Token lives in the REDDIT_CAPI_TOKEN env var (this repo
 // is public — never commit it).
 const PIXEL_ID = "a2_jhid4j1rgdlj";
-const TYPES = new Set(["PageVisit", "AddToCart", "Purchase"]);
+const TYPES = new Set(["PageVisit", "SignUp", "Lead", "AddToCart", "Purchase"]);
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") { res.status(405).end(); return; }
@@ -24,9 +24,10 @@ module.exports = async (req, res) => {
   };
   if (typeof b.cid === "string" && b.cid) event.click_id = b.cid.slice(0, 512);
   if (b.t === "Purchase") {
+    // A Besties AI subscription. No value_decimal: the price lives in
+    // Stripe, so it isn't hardcoded here.
     event.event_metadata = {
       currency: "USD",
-      value_decimal: 11,
       item_count: 1,
       // Stripe session id — Reddit dedupes retries/reloads on this.
       conversion_id: typeof b.conv === "string" && b.conv ? b.conv.slice(0, 256) : undefined

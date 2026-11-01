@@ -4,9 +4,9 @@ import Charts
 enum Tab: String, CaseIterable {
     case allTime = "All Time"
     case timeMachine = "Time Machine"
+    case ai = "AI"
     case reconnect = "Reconnect"
     case search = "Search"
-    case ai = "AI"
 
     var systemImage: String {
         switch self {
@@ -109,6 +109,69 @@ struct TabBar: View {
 }
 
 
+/// Reconnect's two lists: friends you drifted from, and people you added
+/// but never really texted.
+enum ReconnectMode: String, CaseIterable {
+    case drifted = "Old friends"
+    case followUp = "Almost friends"
+
+    var systemImage: String {
+        switch self {
+        case .drifted: "hourglass"
+        case .followUp: "person.crop.circle.badge.plus"
+        }
+    }
+}
+
+/// The main tab bar's look at a smaller size: sun pill sliding on a gray track.
+struct ReconnectModeToggle: View {
+    @Binding var selection: ReconnectMode
+    /// False on narrow windows: icons only, names in the tooltip.
+    var showsLabels = true
+    @Namespace private var pillNS
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(ReconnectMode.allCases, id: \.self) { mode in
+                Button {
+                    if reduceMotion {
+                        selection = mode
+                    } else {
+                        withAnimation(.spring(duration: 0.28)) { selection = mode }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: mode.systemImage)
+                            .font(.system(size: 13, weight: .bold))
+                        if showsLabels {
+                            Text(mode.rawValue)
+                                .font(.system(size: 14, weight: .bold))
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                    }
+                    .padding(.vertical, 7)
+                    .padding(.horizontal, 14)
+                    .foregroundStyle(selection == mode ? Color.ink : Color.ink.opacity(0.55))
+                    .background {
+                        if selection == mode {
+                            RoundedRectangle(cornerRadius: 9)
+                                .fill(Color.sun)
+                                .matchedGeometryEffect(id: "pill", in: pillNS)
+                        }
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 9))
+                }
+                .buttonStyle(.plain)
+                .help(showsLabels ? "" : mode.rawValue)
+            }
+        }
+        .padding(3)
+        .background(Color.ink.opacity(0.065), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
 enum TimeRange: Int, CaseIterable, Identifiable {
     case oneWeek = 7
     case twoWeeks = 14
@@ -147,6 +210,7 @@ struct ContentView: View {
     let appState: AppState
     @State private var selectedTab = Tab.allTime
     @State private var selectedRange = TimeRange.sixMonths
+    @State private var reconnectMode = ReconnectMode.drifted
     @State private var monthPosition: Double = 0
     @State private var showChart = true
     @State private var readerTarget: ReaderTarget?
@@ -155,9 +219,9 @@ struct ContentView: View {
 
     private static let searchFieldWidth: CGFloat = 220
 
-    /// The ✨ column: only with an active AI key — without one the AI tab is
-    /// the paywall, and a draft request would just be dropped there.
-    private var showsAIActions: Bool { SubscriptionManager.shared.isActive }
+    /// The ✨ column. Always shown: without AI set up, the AI tab asks how
+    /// first and then runs the request.
+    private var showsAIActions: Bool { true }
 
     /// The people filter, right-aligned directly above whichever list it filters.
     private var filterRow: some View {
@@ -239,22 +303,15 @@ struct ContentView: View {
                     switch selectedTab {
                     case .reconnect:
                         VStack(spacing: 8) {
-                            HStack(spacing: 6) {
-                                Text("Last Contact:")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                Picker("", selection: $selectedRange) {
-                                    ForEach(TimeRange.allCases) { range in
-                                        Text(range.label).tag(range)
-                                    }
-                                }
-                                .fixedSize()
-                                Spacer(minLength: 0)
-                                searchField
-                                    .frame(width: Self.searchFieldWidth)
-                            }
-                            .padding(.horizontal, 16)
-                            if filteredReconnect.isEmpty {
+                            reconnectHeader
+                                .padding(.horizontal, 16)
+                            if reconnectMode == .followUp {
+                                FollowUpListView(
+                                    appState: appState,
+                                    query: searchText.trimmingCharacters(in: .whitespaces),
+                                    onOpen: { openReader(key: $0) }
+                                )
+                            } else if filteredReconnect.isEmpty {
                                 Text(isSearching ? "No matches." : "No one to reconnect with right now.")
                                     .foregroundStyle(.secondary)
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -490,6 +547,52 @@ struct ContentView: View {
         return date.formatted(.dateTime.month(.wide).year())
     }
 
+    /// One row when it fits; narrower windows put the filters on a second
+    /// row, then shrink the toggle to icons. Never clips.
+    private var reconnectHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .bottom, spacing: 12) {
+                ReconnectModeToggle(selection: $reconnectMode)
+                lastContactPicker
+                Spacer(minLength: 0)
+                searchField
+                    .frame(width: 180)
+            }
+            ForEach([true, false], id: \.self) { labels in
+                VStack(alignment: .leading, spacing: 8) {
+                    ReconnectModeToggle(selection: $reconnectMode, showsLabels: labels)
+                    HStack(alignment: .bottom, spacing: 12) {
+                        lastContactPicker
+                        Spacer(minLength: 0)
+                        searchField
+                            .frame(minWidth: 110, maxWidth: Self.searchFieldWidth)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Label above the picker. Kept in the layout (invisible) on the other
+    /// list so switching lists never moves anything.
+    private var lastContactPicker: some View {
+        let shown = reconnectMode == .drifted
+        return VStack(alignment: .leading, spacing: 3) {
+            Text("Last contact")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Picker("Last contact", selection: $selectedRange) {
+                ForEach(TimeRange.allCases) { range in
+                    Text(range.label).tag(range)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
+        .opacity(shown ? 1 : 0)
+        .allowsHitTesting(shown)
+        .accessibilityHidden(!shown)
+    }
+
     private var reconnectTable: some View {
         Table(filteredReconnect, sortOrder: $sortOrder) {
             TableColumn("Name", value: \.resolvedName, comparator: .localizedStandard) { convo in
@@ -511,7 +614,7 @@ struct ContentView: View {
                 Text("\(convo.daysSinceLastMessage)d ago")
                     .foregroundStyle(.secondary)
             }
-            .width(min: 70, ideal: 70, max: 90)
+            .width(min: 104, ideal: 104, max: 120)
 
             TableColumn("Messages", value: \.totalMessages) { convo in
                 Text("\(convo.totalMessages)")
@@ -522,7 +625,7 @@ struct ContentView: View {
             TableColumn("Score", value: \.score) { convo in
                 ScoreCell(score: convo.score, breakdown: convo.scoreBreakdown)
             }
-            .width(min: 40, ideal: 40, max: 50)
+            .width(min: 62, ideal: 62, max: 70)
 
             TableColumn("") { convo in
                 HStack(spacing: 4) {

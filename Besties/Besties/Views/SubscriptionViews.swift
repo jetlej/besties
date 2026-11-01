@@ -1,204 +1,394 @@
 import AppKit
 import SwiftUI
 
-// MARK: - Paywall
+// MARK: - Chooser
 
-/// The AI tab without an active subscription: what it does, shown as a real
-/// chat (fictional people and numbers), then the one thing to do about it.
-struct AIPaywallView: View {
+/// How Besties AI runs — one pick out of four. Shown on the AI tab until one
+/// is set up, and in Settings to see or switch it. Three are free (the user
+/// brings the AI); only "Besties AI" — our key — costs money.
+struct AIChooserView: View {
+    enum Way: CaseIterable {
+        case localApp, chatGPT, ownKey, besties
+    }
+
+    @Bindable var mcp: MCPController
+    /// Settings: no big header, tighter rows.
+    var compact = false
+
     private let subscription = SubscriptionManager.shared
+    private let chatGPT = ChatGPTAuth.shared
+    @State private var selected: Way?
+    @State private var keyDraft = ""
+    @State private var notice: String?
     @State private var showSignIn = false
-    @State private var notice: SubscriptionManager.SignInError?
     @State private var checking = false
 
-    /// "anything" gets the site's sun-highlight treatment, as in the chat.
     private static let title: AttributedString = {
-        var title = AttributedString("Ask anything about your messages.")
-        if let range = title.range(of: "anything") {
+        var title = AttributedString("How do you want to use AI?")
+        if let range = title.range(of: "AI") {
             title[range].backgroundColor = .sun
         }
         return title
     }()
 
+    /// The way currently in use.
+    private var inUse: Way? {
+        if subscription.usesOwnKey { return .ownKey }
+        if subscription.usesChatGPTPlan { return .chatGPT }
+        if subscription.isActive { return .besties }
+        if mcp.enabled { return .localApp }
+        return nil
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 22) {
-                Text(Self.title)
-                    .font(.system(size: 30, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Color.ink)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                examples
-
-                VStack(spacing: 8) {
-                    Button {
-                        NSWorkspace.shared.open(SubscriptionManager.subscribeURL)
-                    } label: {
-                        Text("Subscribe — $10/mo")
-                            .font(.system(size: 16, weight: .heavy, design: .rounded))
-                            .foregroundStyle(Color.ink)
-                            .frame(maxWidth: 320)
-                            .padding(.vertical, 12)
-                            .background(Color.sun, in: RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    Text("Includes $9 of AI credit every month. Cancel anytime.")
-                        .font(.caption)
-                        .foregroundStyle(Color.ink.opacity(0.5))
+        VStack(spacing: compact ? 10 : 14) {
+            if !compact {
+                VStack(spacing: 6) {
+                    Text(Self.title)
+                        .font(.system(size: 30, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Color.ink)
+                        .multilineTextAlignment(.center)
+                    Text("Pick one. You can switch anytime in Settings.")
+                        .font(.callout)
+                        .foregroundStyle(Color.ink.opacity(0.55))
                 }
-
-                secondaryAction
-
-                // Reserved so a message appearing never moves the layout.
-                Text(notice?.message ?? " ")
+                .padding(.bottom, 6)
+            }
+            ForEach(Way.allCases, id: \.self) { way in
+                row(way)
+            }
+            if let notice {
+                Text(notice)
                     .font(.callout.weight(.medium))
                     .foregroundStyle(Color.orange)
                     .multilineTextAlignment(.center)
-                    .frame(height: 36, alignment: .top)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: 520)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 28)
-            .frame(maxWidth: .infinity)
         }
+        .onAppear { if selected == nil { selected = inUse } }
+        .animation(.easeInOut(duration: 0.25), value: selected)
+        .animation(.easeInOut(duration: 0.25), value: inUse)
         .sheet(isPresented: $showSignIn) {
-            AISignInSheet { error in notice = error }
+            AISignInSheet { error in
+                notice = error?.message
+                if subscription.isSignedIn { clearOthers(keeping: .besties) }
+            }
+        }
+    }
+
+    // MARK: Rows
+
+    private func row(_ way: Way) -> some View {
+        let active = inUse == way
+        let open = selected == way && hasDetail(way)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Text(emoji(way))
+                    .font(.system(size: compact ? 18 : 22))
+                    .frame(width: compact ? 34 : 42, height: compact ? 34 : 42)
+                    .background(tint(way).opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title(way))
+                        .font(.system(size: compact ? 14 : 16, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Color.ink)
+                    Text(caption(way))
+                        .font(compact ? .caption : .callout)
+                        .foregroundStyle(Color.ink.opacity(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                trailing(way, active: active)
+            }
+            .padding(compact ? 10 : 14)
+            .contentShape(Rectangle())
+            // The header only opens details; the trailing button does the setup.
+            .onTapGesture {
+                notice = nil
+                selected = selected == way ? nil : way
+            }
+
+            if open {
+                detail(way)
+                    .padding(.horizontal, compact ? 10 : 14)
+                    .padding(.bottom, compact ? 12 : 16)
+                    .padding(.leading, compact ? 46 : 54)
+                    // Content fades in once the card has grown, so the card
+                    // reads as unfolding downward rather than sliding.
+                    .transition(.asymmetric(
+                        insertion: .opacity.animation(.easeOut(duration: 0.18).delay(0.12)),
+                        removal: .opacity.animation(.easeIn(duration: 0.1))))
+            }
+        }
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14)
+            .strokeBorder(active ? Color.sun : Color.ink.opacity(0.08), lineWidth: active ? 2 : 1))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    /// The set-up button, or — for the way in use — an "In use" badge (its
+    /// details below hold the way to turn it off).
+    @ViewBuilder
+    private func trailing(_ way: Way, active: Bool) -> some View {
+        if active {
+            Label("In use", systemImage: "checkmark")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.brandBlue, in: Capsule())
+        } else if way == .chatGPT, chatGPT.state == .signingIn {
+            ProgressView().controlSize(.small)
+        } else {
+            Button {
+                notice = nil
+                setUp(way)
+            } label: {
+                Text(cta(way))
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Color.ink)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(way == .besties ? Color.sun : Color.ink.opacity(0.07), in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func cta(_ way: Way) -> String {
+        switch way {
+        case .localApp: return "Turn on"
+        case .chatGPT: return "Sign in"
+        case .ownKey: return "Add key"
+        case .besties: return "Subscribe"
+        }
+    }
+
+    private func setUp(_ way: Way) {
+        switch way {
+        case .localApp:
+            clearOthers(keeping: .localApp)
+            mcp.enabled = true
+            selected = .localApp
+        case .chatGPT:
+            selected = .chatGPT
+            Task {
+                do {
+                    try await chatGPT.signIn()
+                    clearOthers(keeping: .chatGPT)
+                } catch let error as ChatGPTAuth.AuthError {
+                    notice = error.message
+                } catch {
+                    notice = error.localizedDescription
+                }
+            }
+        case .ownKey:
+            selected = .ownKey
+        case .besties:
+            NSWorkspace.shared.open(SubscriptionManager.subscribeURL)
+            selected = .besties
+        }
+    }
+
+    private func emoji(_ way: Way) -> String {
+        switch way {
+        case .localApp: return "🖥️"
+        case .chatGPT: return "💬"
+        case .ownKey: return "🔑"
+        case .besties: return "✨"
+        }
+    }
+
+    private func tint(_ way: Way) -> Color {
+        switch way {
+        case .localApp: return .green
+        case .chatGPT: return .brandBlue
+        case .ownKey: return .orange
+        case .besties: return .sun
+        }
+    }
+
+    private func title(_ way: Way) -> String {
+        switch way {
+        case .localApp: return "Use an AI app on your Mac"
+        case .chatGPT: return "Sign in with ChatGPT"
+        case .ownKey: return "Paste a Claude API key"
+        case .besties: return "Besties AI"
+        }
+    }
+
+    private func caption(_ way: Way) -> String {
+        switch way {
+        case .localApp: return "LM Studio, Claude Desktop, Cursor… With a local model, nothing leaves your Mac."
+        case .chatGPT: return "Free with your ChatGPT Plus or Pro plan."
+        case .ownKey: return "Anthropic bills you directly for what you use."
+        case .besties: return "$7/mo. Nothing to set up — Claude, GPT and more, with 3,000 AI credits every month."
+        }
+    }
+
+    // MARK: Details
+
+    /// Whether a way has anything to show below its header right now.
+    private func hasDetail(_ way: Way) -> Bool {
+        switch way {
+        case .localApp: return mcp.enabled
+        case .chatGPT: return chatGPT.isSignedIn || chatGPT.state == .signingIn
+        case .ownKey, .besties: return true
         }
     }
 
     @ViewBuilder
-    private var secondaryAction: some View {
-        if case .needsSignIn = subscription.state {
-            linkButton("Enter your sign-in code") { notice = nil; showSignIn = true }
-        } else if subscription.isSignedIn {
-            // Signed in but not active: lapsed, the key didn't load yet, or the
-            // subscription lives under another email / a new Stripe customer.
-            HStack(spacing: 6) {
-                Text("Signed in as \(subscription.email ?? "you").")
-                    .foregroundStyle(Color.ink.opacity(0.55))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                linkButton(checking ? "Checking…" : "Check again") {
-                    Task {
-                        checking = true
-                        notice = nil
-                        do { try await subscription.checkAgain() } catch let error as SubscriptionManager.SignInError {
-                            notice = error
-                        } catch {}
-                        checking = false
-                    }
-                }
-                .disabled(checking)
-                linkButton("Use a different email") {
-                    notice = nil
-                    subscription.signOut()
-                    showSignIn = true
-                }
-                .disabled(checking)
-            }
-            .font(.callout)
-        } else {
-            linkButton("Already subscribed? Sign in") { notice = nil; showSignIn = true }
+    private func detail(_ way: Way) -> some View {
+        switch way {
+        case .localApp: MCPConnectPanel(mcp: mcp)
+        case .chatGPT: chatGPTDetail
+        case .ownKey: ownKeyDetail
+        case .besties: bestiesDetail
         }
     }
 
-    private func linkButton(_ title: String, action: @escaping () -> Void) -> some View {
+    @ViewBuilder
+    private var chatGPTDetail: some View {
+        if chatGPT.isSignedIn {
+            HStack {
+                Text("Signed in as \(chatGPT.email ?? "you")")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Color.ink)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                linkButton("Sign out", color: .orange) { chatGPT.signOut() }
+            }
+        } else {
+            Text("Finish signing in in your browser…")
+                .font(.callout)
+                .foregroundStyle(Color.ink.opacity(0.6))
+        }
+    }
+
+    @ViewBuilder
+    private var ownKeyDetail: some View {
+        if subscription.usesOwnKey {
+            HStack {
+                Text("Your key is saved in the Keychain.")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Color.ink)
+                Spacer()
+                linkButton("Remove", color: .orange) { subscription.removeOwnKey() }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    SecureField("sk-ant-…", text: $keyDraft)
+                        .textFieldStyle(.plain)
+                        .onSubmit(saveKey)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Color.paper, in: RoundedRectangle(cornerRadius: 9))
+                        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.ink.opacity(0.15)))
+                    primaryButton("Use key", action: saveKey)
+                        .disabled(keyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                HStack(spacing: 4) {
+                    Text("No key yet?")
+                        .foregroundStyle(Color.ink.opacity(0.45))
+                    linkButton("Get one from Anthropic →") {
+                        NSWorkspace.shared.open(URL(string: "https://console.anthropic.com/settings/keys")!)
+                    }
+                }
+                .font(.caption)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var bestiesDetail: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if inUse == .besties {
+                HStack {
+                    Text("Signed in as \(subscription.email ?? "you")")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(Color.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    linkButton("Sign out", color: .orange) { subscription.signOut() }
+                }
+                AICreditMeter()
+            } else {
+                Text("Or $69/year. Cancel anytime.")
+                    .font(.caption)
+                    .foregroundStyle(Color.ink.opacity(0.45))
+                if case .needsSignIn = subscription.state {
+                    linkButton("Enter your sign-in code") { notice = nil; showSignIn = true }
+                        .font(.callout)
+                } else if subscription.isSignedIn {
+                    HStack(spacing: 10) {
+                        Text("Signed in as \(subscription.email ?? "you"), no active plan.")
+                            .foregroundStyle(Color.ink.opacity(0.55))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        linkButton(checking ? "Checking…" : "Check again") {
+                            Task {
+                                checking = true
+                                notice = nil
+                                do { try await subscription.checkAgain() } catch let error as SubscriptionManager.SignInError {
+                                    notice = error.message
+                                } catch {}
+                                checking = false
+                            }
+                        }
+                        .disabled(checking)
+                    }
+                    .font(.callout)
+                } else {
+                    linkButton("Already subscribed? Sign in") { notice = nil; showSignIn = true }
+                        .font(.callout)
+                }
+            }
+        }
+    }
+
+    // MARK: Actions
+
+    private func saveKey() {
+        do {
+            try subscription.setOwnKey(keyDraft)
+            keyDraft = ""
+            notice = nil
+            clearOthers(keeping: .ownKey)
+        } catch let error as SubscriptionManager.SignInError {
+            notice = error.message
+        } catch {}
+    }
+
+    /// One way at a time: setting one up turns the free ones off. A paid
+    /// subscription is never signed out from here — it only ever loses on
+    /// precedence, so removing the other way brings it straight back.
+    private func clearOthers(keeping way: Way) {
+        if way != .ownKey, subscription.usesOwnKey { subscription.removeOwnKey() }
+        if way != .chatGPT, chatGPT.isSignedIn { chatGPT.signOut() }
+        if way != .localApp, mcp.enabled { mcp.enabled = false }
+    }
+
+    private func primaryButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(Color.brandBlue)
+                .font(.system(size: 14, weight: .heavy, design: .rounded))
+                .foregroundStyle(Color.ink)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.sun, in: RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: Examples
-
-    private var examples: some View {
-        VStack(spacing: 10) {
-            question("Who have I said I love you to the most?")
-            answer { loveLeaderboard }
-            question("When did Sam and I start talking every day?")
-            answer {
-                Text("**March 2019.** You went from a few texts a month to 40+ a day right after the Lisbon trip — and never really stopped. ✈️")
-            }
-            question("What was my first ever message?")
-            answer {
-                Text("**“are we still on for tacos??”** — to Jamie, September 14, 2011. You were.")
-            }
+    private func linkButton(_ title: String, color: Color = .brandBlue, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .fontWeight(.semibold)
+                .foregroundStyle(color)
         }
-        .padding(16)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.ink.opacity(0.08)))
-        .shadow(color: Color.ink.opacity(0.06), radius: 8, y: 3)
-        // Examples, not controls.
-        .allowsHitTesting(false)
-    }
-
-    private static let loveRows: [(medal: String, name: String, count: Int)] = [
-        ("🥇", "Mom", 412),
-        ("🥈", "Sam", 287),
-        ("🥉", "Priya", 154),
-        ("4", "Jake", 61),
-    ]
-
-    private var loveLeaderboard: some View {
-        let top = Double(Self.loveRows.first?.count ?? 1)
-        return VStack(alignment: .leading, spacing: 7) {
-            Text("❤️ Your “I love you” leaderboard")
-                .font(.system(size: 14, weight: .heavy, design: .rounded))
-            ForEach(Self.loveRows, id: \.name) { row in
-                HStack(spacing: 8) {
-                    Text(row.medal)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .frame(width: 20)
-                    Text(row.name)
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 44, alignment: .leading)
-                    GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.brandBlue)
-                            .frame(width: max(geo.size.width * Double(row.count) / top, 4))
-                    }
-                    .frame(height: 12)
-                    Text("\(row.count)")
-                        .font(.system(size: 12, weight: .semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(Color.ink.opacity(0.6))
-                        .frame(width: 30, alignment: .trailing)
-                }
-            }
-            Text("Mom wins by a mile. Sam's climbing fast. 📈")
-                .font(.system(size: 13))
-        }
-        .frame(width: 280)
-    }
-
-    /// Same shapes and colors as the real chat's bubbles.
-    private func question(_ text: String) -> some View {
-        HStack {
-            Spacer(minLength: 60)
-            Text(text)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Color.brandBlue)
-                .foregroundStyle(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-        }
-    }
-
-    private func answer<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        HStack {
-            content()
-                .fixedSize(horizontal: false, vertical: true)
-                .lineSpacing(2)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Color.bubbleTan)
-                .foregroundStyle(Color.ink)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-            Spacer(minLength: 60)
-        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -384,6 +574,7 @@ struct AISignInSheet: View {
 
 /// Sidebar footer of the chat: who's signed in, BYOK, sign out.
 struct AIAccountButton: View {
+    let mcpController: MCPController
     private let subscription = SubscriptionManager.shared
     @State private var showing = false
 
@@ -391,8 +582,7 @@ struct AIAccountButton: View {
         Button {
             showing = true
         } label: {
-            Label(subscription.isDevKey ? "Dev key" : (subscription.email ?? "Account"),
-                  systemImage: "person.crop.circle")
+            Label(label, systemImage: "person.crop.circle")
                 .font(.caption)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -401,101 +591,113 @@ struct AIAccountButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showing, arrowEdge: .trailing) {
+        .popover(isPresented: Binding(get: { showing && subscription.isActive }, set: { showing = $0 }),
+                 arrowEdge: .trailing) {
             AIAccountPopover()
         }
+        .sheet(isPresented: Binding(get: { showing && !subscription.isActive }, set: { showing = $0 })) {
+            AISetupSheet(mcp: mcpController)
+        }
+    }
+
+    private var label: String {
+        if subscription.usesChatGPTPlan { return ChatGPTAuth.shared.email ?? "ChatGPT plan" }
+        if subscription.usesOwnKey { return "Your API key" }
+        if !subscription.isActive { return "Set up AI" }
+        return subscription.email ?? "Account"
     }
 }
 
 private struct AIAccountPopover: View {
     private let subscription = SubscriptionManager.shared
-    @State private var keyDraft = ""
-    @State private var keyError: SubscriptionManager.SignInError?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Besties AI")
                 .font(.system(size: 17, weight: .heavy, design: .rounded))
                 .foregroundStyle(Color.ink)
-            if subscription.isDevKey {
-                // DEV CARVE-OUT — REMOVE AT SHIP (SubscriptionManager.devKey).
-                Text("Using the dev key from the anthropicKey default. No subscription, no meter.")
-                    .font(.callout)
-                    .foregroundStyle(Color.ink.opacity(0.6))
-                    .fixedSize(horizontal: false, vertical: true)
+            if subscription.usesChatGPTPlan {
+                line("Using your ChatGPT plan — \(ChatGPTAuth.shared.email ?? "signed in")")
+                note("GPT models only. Uses your plan's limits, not ours.")
+            } else if subscription.usesOwnKey {
+                line("Using your own API key")
+                note("Billed by your provider, straight to your account.")
             } else {
-                Text("Signed in as \(subscription.email ?? "you")")
-                    .font(.callout)
-                    .foregroundStyle(Color.ink.opacity(0.7))
+                line("Signed in as \(subscription.email ?? "you")")
                 AICreditMeter()
-                if subscription.canUseOwnKey {
-                    Divider()
-                    ownKeySection
-                }
-                Divider()
-                Button("Sign out") { subscription.signOut() }
-                    .buttonStyle(.plain)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(Color.orange)
             }
+            Divider()
+            Button("Use a different way") {
+                subscription.resetAccess()
+                dismiss()
+            }
+            .buttonStyle(.plain)
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(Color.orange)
         }
         .padding(16)
         .frame(width: 300, alignment: .leading)
         .background(Color.paper)
     }
 
-    @ViewBuilder
-    private var ownKeySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Your own OpenRouter key")
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(Color.ink)
-            if subscription.usesOwnKey {
-                Text("In use — AI bills your OpenRouter account instead of your monthly credit.")
-                    .font(.caption)
-                    .foregroundStyle(Color.ink.opacity(0.55))
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Remove my key") { subscription.removeOwnKey() }
-                    .controlSize(.small)
-            } else {
-                HStack(spacing: 6) {
-                    SecureField("sk-or-…", text: $keyDraft)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit(save)
-                    Button("Use", action: save)
-                        .disabled(keyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                .controlSize(.small)
-                Text(keyError?.message ?? "Optional. Stored in your Keychain.")
-                    .font(.caption)
-                    .foregroundStyle(keyError == nil ? Color.ink.opacity(0.45) : Color.orange)
-            }
-        }
+    private func line(_ text: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(Color.ink.opacity(0.7))
+            .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func save() {
-        do {
-            try subscription.setOwnKey(keyDraft)
-            keyDraft = ""
-            keyError = nil
-        } catch let error as SubscriptionManager.SignInError {
-            keyError = error
-        } catch {}
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(Color.ink.opacity(0.45))
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
 // MARK: - Meter
 
-/// "$X.XX of $9.00 left this month" — the minted key's credit, straight from
-/// OpenRouter. Absent for the dev key and for BYOK.
+/// "X of 3,000 credits left this month" — the minted key's credit, straight
+/// from OpenRouter (1 credit = $0.001 of usage). Absent for the dev key and
+/// for BYOK.
 struct AICreditMeter: View {
     private let subscription = SubscriptionManager.shared
 
     var body: some View {
         if subscription.showsMeter, let remaining = subscription.creditRemaining {
-            Text(String(format: "$%.2f of $%.2f left this month", remaining, SubscriptionManager.monthlyCredit))
+            let credits = Int((remaining / SubscriptionManager.creditUSD).rounded(.down))
+            Text("\(credits.formatted()) of \(SubscriptionManager.monthlyCredits.formatted()) credits left this month")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(Color.ink.opacity(0.45))
         }
+    }
+}
+
+// MARK: - Setup sheet
+
+/// The chooser as a modal: what the AI tab opens when someone acts on it
+/// before picking a way. Fixed size — expanding an option scrolls.
+struct AISetupSheet: View {
+    @Bindable var mcp: MCPController
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                AIChooserView(mcp: mcp)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 28)
+                    .padding(.bottom, 12)
+            }
+            Button("Not now") { dismiss() }
+                .buttonStyle(.plain)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(Color.ink.opacity(0.5))
+                .keyboardShortcut(.cancelAction)
+                .padding(.vertical, 14)
+        }
+        .frame(width: 580, height: 600)
+        .background(Color.paper)
     }
 }

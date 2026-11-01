@@ -22,9 +22,17 @@ Click **any avatar or name** anywhere in the app to open that person's page:
 
 Messages across all of a person's numbers and emails (SMS + iMessage) are merged into one thread.
 
+### Besties AI ✨
+
+The AI tab answers anything about your history, writes your Wrapped (and one for any friendship), and drafts messages to people you've drifted from. It's the paid part of Besties: $7/mo or $69/yr, with AI credit every month. The app talks straight to the model through OpenRouter with a per-subscriber key; our servers never see your messages (see [`docs/ai-subscription-plan.md`](docs/ai-subscription-plan.md)).
+
+### Use Besties from other AI apps (MCP) 🔌
+
+Settings → AI Apps turns Besties into a read-only [MCP](https://modelcontextprotocol.io) server on `127.0.0.1`, so an AI app on your Mac can answer questions about your history. With LM Studio and a local model, nothing leaves your Mac. Off by default; apps need the token shown in Settings, and it only runs while Besties is open.
+
 ## Privacy
 
-Everything runs **100% locally** — nothing ever leaves your Mac. There's no server, no analytics, no network calls at all (try it in Airplane Mode). Besties reads your local `chat.db` via Full Disk Access and your Contacts (to show names), and that's it.
+Everything runs **locally**. There's no account and no analytics, and your history stays on your Mac. The only network traffic is update checks and, if you subscribe, Besties AI: what a question needs goes straight from your Mac to the AI model, never through our servers. Prefer fully local? Use MCP with a local AI app. Without AI, everything works in Airplane Mode. Besties reads your local `chat.db` via Full Disk Access and your Contacts (to show names), and that's it.
 
 ## Run it
 

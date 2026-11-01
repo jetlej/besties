@@ -2,6 +2,16 @@ import Foundation
 import SQLite3
 import Contacts
 
+/// A named contact card with a phone number and the day it was added — for
+/// Reconnect's "Never followed up".
+struct AddedContact {
+    let name: String
+    let phones: [String]
+    let added: Date
+    /// The card's note, else its company — often where you met.
+    let detail: String?
+}
+
 final class ContactResolver {
     private var phoneLookup: [String: String] = [:]
     private var emailLookup: [String: String] = [:]
@@ -53,22 +63,78 @@ final class ContactResolver {
         guard !loaded else { return }
         loaded = true
 
-        let abDir = NSHomeDirectory() + "/Library/Application Support/AddressBook"
-        let fm = FileManager.default
-
-        var dbPaths = [abDir + "/AddressBook-v22.abcddb"]
-        if let sources = try? fm.contentsOfDirectory(atPath: abDir + "/Sources") {
-            for source in sources {
-                dbPaths.append(abDir + "/Sources/\(source)/AddressBook-v22.abcddb")
-            }
-        }
-
-        for path in dbPaths {
-            guard fm.fileExists(atPath: path) else { continue }
+        for path in Self.databasePaths() {
             loadFromDatabase(path: path)
         }
 
         loadContactImages()
+    }
+
+    /// The local database plus one per synced account (iCloud, Google, …).
+    private static func databasePaths() -> [String] {
+        let abDir = NSHomeDirectory() + "/Library/Application Support/AddressBook"
+        let fm = FileManager.default
+        var paths = [abDir + "/AddressBook-v22.abcddb"]
+        if let sources = try? fm.contentsOfDirectory(atPath: abDir + "/Sources") {
+            for source in sources {
+                paths.append(abDir + "/Sources/\(source)/AddressBook-v22.abcddb")
+            }
+        }
+        return paths.filter { fm.fileExists(atPath: $0) }
+    }
+
+    /// Days on which more than this many cards were "added" are bulk imports.
+    private static let bulkImportThreshold = 50
+
+    /// Every named card with a phone number, with the day it was added. The
+    /// same person in two accounts is one entry (earliest date). Cards from a
+    /// bulk import are dropped: an iCloud migration stamps hundreds of cards
+    /// with one day, which says nothing about when you met.
+    func addedContacts() -> [AddedContact] {
+        struct Card { var phones: Set<String>; var added: Date; var detail: String? }
+        var byName: [String: Card] = [:]
+
+        for path in Self.databasePaths() {
+            var db: OpaquePointer?
+            guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+                sqlite3_close(db)
+                continue
+            }
+            defer { sqlite3_close(db) }
+            let sql = """
+                SELECT r.ZFIRSTNAME, r.ZLASTNAME, r.ZORGANIZATION, r.ZCREATIONDATE, n.ZTEXT, p.ZFULLNUMBER
+                FROM ZABCDRECORD r
+                JOIN ZABCDPHONENUMBER p ON p.ZOWNER = r.Z_PK
+                LEFT JOIN ZABCDNOTE n ON n.ZCONTACT = r.Z_PK
+                WHERE r.ZCREATIONDATE IS NOT NULL AND p.ZFULLNUMBER IS NOT NULL
+                  AND (r.ZFIRSTNAME IS NOT NULL OR r.ZLASTNAME IS NOT NULL)
+                """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { continue }
+            defer { sqlite3_finalize(stmt) }
+
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let text = { (i: Int32) in sqlite3_column_text(stmt, i).map { String(cString: $0) } }
+                let name = Self.screenshotName([text(0), text(1)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " "))
+                guard !name.isEmpty, let phone = text(5) else { continue }
+                // Core Data timestamps count seconds from 2001-01-01.
+                let added = Date(timeIntervalSinceReferenceDate: sqlite3_column_double(stmt, 3))
+                let note = text(4)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let detail = (note?.isEmpty == false ? note : nil) ?? text(2)
+                var card = byName[name] ?? Card(phones: [], added: added, detail: detail)
+                card.phones.insert(phone)
+                card.added = min(card.added, added)
+                if card.detail == nil { card.detail = detail }
+                byName[name] = card
+            }
+        }
+
+        let calendar = Calendar.current
+        let perDay = Dictionary(grouping: byName.values, by: { calendar.startOfDay(for: $0.added) }).mapValues(\.count)
+        return byName.compactMap { name, card in
+            guard perDay[calendar.startOfDay(for: card.added), default: 0] <= Self.bulkImportThreshold else { return nil }
+            return AddedContact(name: name, phones: card.phones.sorted(), added: card.added, detail: card.detail)
+        }
     }
 
     /// Photos are keyed by handle (phone/email), not name, so two contacts
