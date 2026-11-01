@@ -79,20 +79,20 @@ struct FollowUpListView: View {
     let appState: AppState
     let query: String
     let onOpen: (String) -> Void
+    @State private var showHidden = false
 
-    private var rows: [FollowUp] {
-        appState.followUps.filter {
-            !appState.hiddenFollowUps.contains($0.id)
-                && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query))
-        }
+    private var matches: [FollowUp] {
+        appState.followUps.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
     }
+    private var rows: [FollowUp] { matches.filter { !appState.hiddenFollowUps.contains($0.id) } }
+    private var hidden: [FollowUp] { matches.filter { appState.hiddenFollowUps.contains($0.id) } }
 
     var body: some View {
         Group {
             if !appState.followUpsLoaded {
                 ProgressView("Reading your contacts…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if rows.isEmpty {
+            } else if rows.isEmpty && hidden.isEmpty {
                 Text(query.isEmpty ? "You've followed up with everyone you added. 🎉" : "No matches.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -105,7 +105,21 @@ struct FollowUpListView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.bottom, 2)
                         ForEach(rows) { person in
-                            FollowUpRow(person: person, appState: appState, onOpen: onOpen)
+                            FollowUpRow(person: person, appState: appState, isHidden: false, onOpen: onOpen)
+                        }
+                        if !hidden.isEmpty {
+                            Button(showHidden ? "Collapse hidden" : "Show \(hidden.count) hidden") {
+                                withAnimation { showHidden.toggle() }
+                            }
+                            .buttonStyle(.plain)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(Color.brandBlue)
+                            .padding(.top, 6)
+                            if showHidden {
+                                ForEach(hidden) { person in
+                                    FollowUpRow(person: person, appState: appState, isHidden: true, onOpen: onOpen)
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -120,6 +134,8 @@ struct FollowUpListView: View {
 private struct FollowUpRow: View {
     let person: FollowUp
     let appState: AppState
+    /// Shown under "Show N hidden": dimmed, and its eye button unhides.
+    let isHidden: Bool
     let onOpen: (String) -> Void
 
     private var status: String {
@@ -165,13 +181,24 @@ private struct FollowUpRow: View {
             }
             Spacer(minLength: 8)
             Button {
-                withAnimation { _ = appState.hiddenFollowUps.insert(person.id) }
+                withAnimation {
+                    if isHidden {
+                        appState.hiddenFollowUps.remove(person.id)
+                    } else {
+                        appState.hiddenFollowUps.insert(person.id)
+                    }
+                }
             } label: {
-                Image(systemName: "eye.slash")
+                if isHidden {
+                    Label("Unhide", systemImage: "eye")
+                        .font(.caption.weight(.semibold))
+                } else {
+                    Image(systemName: "eye.slash")
+                }
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(Color.ink.opacity(0.4))
-            .help("Hide \(person.name) from this list")
+            .foregroundStyle(isHidden ? Color.brandBlue : Color.ink.opacity(0.4))
+            .help(isHidden ? "Put \(person.name) back on the list" : "Hide \(person.name) from this list")
             if let key = person.conversationKey {
                 Button {
                     appState.aiReportRequest = .reconnectDraft(person: key)
@@ -195,6 +222,7 @@ private struct FollowUpRow: View {
         .padding(12)
         .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.ink.opacity(0.08)))
+        .opacity(isHidden ? 0.6 : 1)
         .contentShape(Rectangle())
         .onTapGesture { if let key = person.conversationKey { onOpen(key) } }
     }

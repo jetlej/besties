@@ -114,6 +114,57 @@ struct TabBar: View {
 enum ReconnectMode: String, CaseIterable {
     case drifted = "Drifted apart"
     case followUp = "Never followed up"
+
+    var systemImage: String {
+        switch self {
+        case .drifted: "hourglass"
+        case .followUp: "person.crop.circle.badge.plus"
+        }
+    }
+}
+
+/// The main tab bar's look at a smaller size: sun pill sliding on a gray track.
+struct ReconnectModeToggle: View {
+    @Binding var selection: ReconnectMode
+    @Namespace private var pillNS
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(ReconnectMode.allCases, id: \.self) { mode in
+                Button {
+                    if reduceMotion {
+                        selection = mode
+                    } else {
+                        withAnimation(.spring(duration: 0.28)) { selection = mode }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: mode.systemImage)
+                            .font(.system(size: 13, weight: .bold))
+                        Text(mode.rawValue)
+                            .font(.system(size: 14, weight: .bold))
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                    .padding(.vertical, 7)
+                    .padding(.horizontal, 14)
+                    .foregroundStyle(selection == mode ? Color.ink : Color.ink.opacity(0.55))
+                    .background {
+                        if selection == mode {
+                            RoundedRectangle(cornerRadius: 9)
+                                .fill(Color.sun)
+                                .matchedGeometryEffect(id: "pill", in: pillNS)
+                        }
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 9))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(Color.ink.opacity(0.065), in: RoundedRectangle(cornerRadius: 12))
+    }
 }
 
 enum TimeRange: Int, CaseIterable, Identifiable {
@@ -248,18 +299,12 @@ struct ContentView: View {
                     case .reconnect:
                         VStack(spacing: 8) {
                             HStack(spacing: 10) {
-                                Picker("", selection: $reconnectMode) {
-                                    ForEach(ReconnectMode.allCases, id: \.self) { mode in
-                                        Text(mode.rawValue).tag(mode)
-                                    }
-                                }
-                                .pickerStyle(.segmented)
-                                .labelsHidden()
-                                .fixedSize()
+                                ReconnectModeToggle(selection: $reconnectMode)
                                 if reconnectMode == .drifted {
                                     Text("Last Contact:")
                                         .font(.callout)
                                         .foregroundStyle(.secondary)
+                                        .fixedSize()
                                     Picker("", selection: $selectedRange) {
                                         ForEach(TimeRange.allCases) { range in
                                             Text(range.label).tag(range)
@@ -268,9 +313,11 @@ struct ContentView: View {
                                     .fixedSize()
                                 }
                                 Spacer(minLength: 0)
+                                // Shrinks before the toggle or the range picker do.
                                 searchField
-                                    .frame(width: Self.searchFieldWidth)
+                                    .frame(minWidth: 120, maxWidth: Self.searchFieldWidth)
                             }
+                            .frame(height: 38)
                             .padding(.horizontal, 16)
                             if reconnectMode == .followUp {
                                 FollowUpListView(
