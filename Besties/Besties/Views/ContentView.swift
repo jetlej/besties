@@ -4,9 +4,9 @@ import Charts
 enum Tab: String, CaseIterable {
     case allTime = "All Time"
     case timeMachine = "Time Machine"
+    case ai = "AI"
     case reconnect = "Reconnect"
     case search = "Search"
-    case ai = "AI"
 
     var systemImage: String {
         switch self {
