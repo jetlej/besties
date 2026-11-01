@@ -234,6 +234,29 @@ final class AppState {
     private let analyzer = ConversationAnalyzer()
     private let contactResolver = ContactResolver()
 
+    /// Reconnect's "Never followed up": people added to Contacts who barely
+    /// got a text. Loaded on first view, newest first.
+    var followUps: [FollowUp] = []
+    var followUpsLoaded = false
+    @ObservationIgnored private var followUpsLoading = false
+    var hiddenFollowUps: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hiddenFollowUps") ?? []) {
+        didSet { UserDefaults.standard.set(Array(hiddenFollowUps), forKey: "hiddenFollowUps") }
+    }
+
+    func loadFollowUps() {
+        guard !followUpsLoaded, !followUpsLoading, !isLoading else { return }
+        followUpsLoading = true
+        let conversations = resolvedConversations
+        Task { [contactResolver, messageStore] in
+            let found = await Task.detached {
+                FollowUp.find(contacts: contactResolver.addedContacts(), conversations: conversations, store: messageStore)
+            }.value
+            self.followUps = found
+            self.followUpsLoaded = true
+            self.followUpsLoading = false
+        }
+    }
+
     func reconnectConversations(maxDays: Int) -> [Conversation] {
         var a = analyzer
         a.maximumDormantDays = maxDays
@@ -465,6 +488,9 @@ final class AppState {
             switch result {
             case .success(let resolved):
                 self.resolvedConversations = resolved
+                // Message counts changed (e.g. WhatsApp toggled): recompute on next view.
+                self.followUpsLoaded = false
+                self.followUps = []
                 self.allConversations = resolved.sorted { $0.totalMessages > $1.totalMessages }
                 self.iMessageConvoByHandleID = Dictionary(
                     resolved.filter { $0.source == .iMessage }.map { ($0.rowID, $0) },

@@ -39,6 +39,7 @@
 		A10000010000000000000033 /* MCPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000033 /* MCPServer.swift */; };
 		A10000010000000000000032 /* SubscriptionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000032 /* SubscriptionViews.swift */; };
 		A10000010000000000000035 /* MCPSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000035 /* MCPSettingsView.swift */; };
+		A10000010000000000000037 /* FollowUpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000037 /* FollowUpView.swift */; };
 		A10000010000000000000036 /* ChatGPTAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000036 /* ChatGPTAuth.swift */; };
 /* End PBXBuildFile section */
 
@@ -76,6 +77,7 @@
 		A20000010000000000000033 /* MCPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPServer.swift; sourceTree = "<group>"; };
 		A20000010000000000000032 /* SubscriptionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionViews.swift; sourceTree = "<group>"; };
 		A20000010000000000000035 /* MCPSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPSettingsView.swift; sourceTree = "<group>"; };
+		A20000010000000000000037 /* FollowUpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowUpView.swift; sourceTree = "<group>"; };
 		A20000010000000000000036 /* ChatGPTAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGPTAuth.swift; sourceTree = "<group>"; };
 		A30000010000000000000001 /* Besties.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Besties.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -162,6 +164,7 @@
 				A20000010000000000000030 /* MarkdownBody.swift */,
 				A20000010000000000000032 /* SubscriptionViews.swift */,
 				A20000010000000000000035 /* MCPSettingsView.swift */,
+				A20000010000000000000037 /* FollowUpView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -282,6 +285,7 @@
 				A10000010000000000000033 /* MCPServer.swift in Sources */,
 				A10000010000000000000032 /* SubscriptionViews.swift in Sources */,
 				A10000010000000000000035 /* MCPSettingsView.swift in Sources */,
+				A10000010000000000000037 /* FollowUpView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

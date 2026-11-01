@@ -13,7 +13,7 @@
 // credited (`orcredit:<invoice id>`), so stripe-webhook doesn't top up the
 // same invoice again when its invoice.paid arrives after the mint.
 //
-// Env: STRIPE_SECRET_KEY, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN,
+// Env: STRIPE_SECRET_KEY, KV_REST_API_URL, KV_REST_API_TOKEN (Vercel's Upstash integration),
 //      OPENROUTER_PROVISIONING_KEY (an OpenRouter "management key"), AUTH_SECRET,
 //      SEAL_SECRET (dedicated sealing secret, independent of AUTH_SECRET so
 //      rotating session tokens doesn't strand stored keys)
@@ -24,9 +24,9 @@ const CREDIT_TTL = 40 * 24 * 3600; // one billing period + Stripe's retry window
 const OR_KEYS = "https://openrouter.ai/api/v1/keys";
 
 async function redis(...cmd) {
-  const r = await fetch(process.env.UPSTASH_REDIS_REST_URL, {
+  const r = await fetch(process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL, {
     method: "POST",
-    headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` },
+    headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN}` },
     body: JSON.stringify(cmd),
   });
   const j = await r.json();

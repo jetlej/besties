@@ -9,15 +9,15 @@
 // fresh key at a full month's credit, so a later top-up would double it.
 //
 // Env: CRON_SECRET (Vercel sends it as a bearer token), STRIPE_SECRET_KEY,
-//      STRIPE_PRICE_YEARLY, UPSTASH_REDIS_REST_URL/TOKEN, OPENROUTER_PROVISIONING_KEY
+//      STRIPE_PRICE_YEARLY, KV_REST_API_URL/TOKEN, OPENROUTER_PROVISIONING_KEY
 const { MONTHLY_CREDIT } = require("./_lib/plan");
 
 const CREDIT_TTL = 40 * 24 * 3600;
 
 async function redis(...cmd) {
-  const r = await fetch(process.env.UPSTASH_REDIS_REST_URL, {
+  const r = await fetch(process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL, {
     method: "POST",
-    headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` },
+    headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN}` },
     body: JSON.stringify(cmd),
   });
   const j = await r.json();

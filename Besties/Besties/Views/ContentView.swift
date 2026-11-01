@@ -109,6 +109,13 @@ struct TabBar: View {
 }
 
 
+/// Reconnect's two lists: friends you drifted from, and people you added
+/// but never really texted.
+enum ReconnectMode: String, CaseIterable {
+    case drifted = "Drifted apart"
+    case followUp = "Never followed up"
+}
+
 enum TimeRange: Int, CaseIterable, Identifiable {
     case oneWeek = 7
     case twoWeeks = 14
@@ -147,6 +154,7 @@ struct ContentView: View {
     let appState: AppState
     @State private var selectedTab = Tab.allTime
     @State private var selectedRange = TimeRange.sixMonths
+    @State private var reconnectMode = ReconnectMode.drifted
     @State private var monthPosition: Double = 0
     @State private var showChart = true
     @State private var readerTarget: ReaderTarget?
@@ -239,22 +247,38 @@ struct ContentView: View {
                     switch selectedTab {
                     case .reconnect:
                         VStack(spacing: 8) {
-                            HStack(spacing: 6) {
-                                Text("Last Contact:")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                Picker("", selection: $selectedRange) {
-                                    ForEach(TimeRange.allCases) { range in
-                                        Text(range.label).tag(range)
+                            HStack(spacing: 10) {
+                                Picker("", selection: $reconnectMode) {
+                                    ForEach(ReconnectMode.allCases, id: \.self) { mode in
+                                        Text(mode.rawValue).tag(mode)
                                     }
                                 }
+                                .pickerStyle(.segmented)
+                                .labelsHidden()
                                 .fixedSize()
+                                if reconnectMode == .drifted {
+                                    Text("Last Contact:")
+                                        .font(.callout)
+                                        .foregroundStyle(.secondary)
+                                    Picker("", selection: $selectedRange) {
+                                        ForEach(TimeRange.allCases) { range in
+                                            Text(range.label).tag(range)
+                                        }
+                                    }
+                                    .fixedSize()
+                                }
                                 Spacer(minLength: 0)
                                 searchField
                                     .frame(width: Self.searchFieldWidth)
                             }
                             .padding(.horizontal, 16)
-                            if filteredReconnect.isEmpty {
+                            if reconnectMode == .followUp {
+                                FollowUpListView(
+                                    appState: appState,
+                                    query: searchText.trimmingCharacters(in: .whitespaces),
+                                    onOpen: { openReader(key: $0) }
+                                )
+                            } else if filteredReconnect.isEmpty {
                                 Text(isSearching ? "No matches." : "No one to reconnect with right now.")
                                     .foregroundStyle(.secondary)
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)

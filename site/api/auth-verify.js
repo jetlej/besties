@@ -8,7 +8,7 @@
 // guesses nor the status/latency pattern says anything about who subscribes.
 // Also capped per IP and by a global failure budget.
 //
-// Env: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, AUTH_SECRET
+// Env: KV_REST_API_URL, KV_REST_API_TOKEN (Vercel's Upstash integration), AUTH_SECRET
 const crypto = require("crypto");
 
 const CODE_TTL = 600; // seconds — matches auth-request
@@ -18,9 +18,9 @@ const GLOBAL_FAIL_MAX_PER_HOUR = 500; // across all emails; past it, every verif
 const FAIL_KEY = "rl:verify:fail";
 
 async function redis(...cmd) {
-  const r = await fetch(process.env.UPSTASH_REDIS_REST_URL, {
+  const r = await fetch(process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL, {
     method: "POST",
-    headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` },
+    headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN}` },
     body: JSON.stringify(cmd),
   });
   const j = await r.json();

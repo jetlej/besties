@@ -5,7 +5,7 @@
 // no package.json here, so @vercel/functions' waitUntil isn't available to send
 // the email after responding.
 //
-// Env: STRIPE_SECRET_KEY, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN,
+// Env: STRIPE_SECRET_KEY, KV_REST_API_URL, KV_REST_API_TOKEN (Vercel's Upstash integration),
 //      RESEND_API_KEY, AUTH_SECRET
 const crypto = require("crypto");
 
@@ -16,9 +16,9 @@ const MIN_RESPONSE_MS = 3000; // flattens timing between subscriber / non-subscr
 const FROM = "Besties <login@besties.gg>";
 
 async function redis(...cmd) {
-  const r = await fetch(process.env.UPSTASH_REDIS_REST_URL, {
+  const r = await fetch(process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL, {
     method: "POST",
-    headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` },
+    headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN}` },
     body: JSON.stringify(cmd),
   });
   const j = await r.json();
